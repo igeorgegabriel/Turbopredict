@@ -1,0 +1,4 @@
+{
+  "contamination": 0.01,
+  "n_estimators": 200
+}

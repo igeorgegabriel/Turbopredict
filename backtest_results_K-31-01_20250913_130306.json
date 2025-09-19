@@ -1,0 +1,57 @@
+{
+  "unit": "K-31-01",
+  "test_summary": {
+    "periods_tested": 1,
+    "methods_compared": 4,
+    "total_data_points": 185220
+  },
+  "method_performance": {
+    "original_3sigma": {
+      "avg_anomaly_rate": 2.8960155490767736,
+      "std_anomaly_rate": 0.0,
+      "min_anomaly_rate": 2.8960155490767736,
+      "max_anomaly_rate": 2.8960155490767736,
+      "avg_total_anomalies": 5364.0,
+      "consistency_score": 1.0,
+      "periods_tested": 1
+    },
+    "conservative_4sigma": {
+      "avg_anomaly_rate": 0.3800885433538495,
+      "std_anomaly_rate": 0.0,
+      "min_anomaly_rate": 0.3800885433538495,
+      "max_anomaly_rate": 0.3800885433538495,
+      "avg_total_anomalies": 704.0,
+      "consistency_score": 1.0,
+      "periods_tested": 1
+    },
+    "baseline_tuned": {
+      "avg_anomaly_rate": 5.952380952380952,
+      "std_anomaly_rate": 0.0,
+      "min_anomaly_rate": 5.952380952380952,
+      "max_anomaly_rate": 5.952380952380952,
+      "avg_total_anomalies": 11025.0,
+      "consistency_score": 1.0,
+      "periods_tested": 1
+    },
+    "isolation_forest": {
+      "avg_anomaly_rate": 10.0,
+      "std_anomaly_rate": 0.0,
+      "min_anomaly_rate": 10.0,
+      "max_anomaly_rate": 10.0,
+      "avg_total_anomalies": 2.0,
+      "consistency_score": 1.0,
+      "periods_tested": 1
+    }
+  },
+  "best_method": {
+    "method": "conservative_4sigma",
+    "reason": "Low false positive rate (0.38%)",
+    "score": 0.7847964582658461
+  },
+  "recommendations": [
+    "Review baseline configuration - anomaly rate higher than expected",
+    "Schedule monthly baseline recalibration",
+    "Monitor detection performance against operator feedback"
+  ],
+  "test_timestamp": "2025-09-13T13:03:06.960803"
+}

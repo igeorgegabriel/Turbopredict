@@ -1,0 +1,13 @@
+{
+  "resample": "10min",
+  "baseline_fraction": 0.6,
+  "threshold_quantile": 0.90,
+  "support_fraction": 0.7,
+  "max_features": 20,
+  "z_threshold": 1.5,
+  "baseline_days": 90,
+  "speed_window_rpm": [9700, 9900],
+  "band_percentiles": [20, 80],
+  "break_persist": 3,
+  "break_persist_window": 4
+}

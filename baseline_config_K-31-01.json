@@ -1,0 +1,1752 @@
+{
+  "unit": "K-31-01",
+  "baseline_period_days": 90,
+  "generated_date": "2025-09-13T12:51:23.378466",
+  "total_tags_analyzed": 156,
+  "stability_distribution": {
+    "VERY_STABLE": 8,
+    "STABLE": 0,
+    "MODERATELY_STABLE": 0,
+    "VARIABLE": 148
+  },
+  "tag_configurations": {
+    "PCFS_K-31-01_31TIA-313B_PV": {
+      "thresholds": {
+        "upper_limit": 123.43180984007357,
+        "lower_limit": -31.94944650969937,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378278"
+    },
+    "PCFS_K-31-01_31TIA-313C_PV": {
+      "thresholds": {
+        "upper_limit": 121.49673843383789,
+        "lower_limit": -31.603415598207086,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378287"
+    },
+    "PCFS_K-31-01_31TIA-324B_PV": {
+      "thresholds": {
+        "upper_limit": 116.80004795270375,
+        "lower_limit": -33.538146216183236,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378289"
+    },
+    "PCFS_K-31-01_31LIA-305_PV": {
+      "thresholds": {
+        "upper_limit": 61.842129707336426,
+        "lower_limit": 29.382134675979614,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378291"
+    },
+    "PCFS_K-31-01_31TIA-315B_PV": {
+      "thresholds": {
+        "upper_limit": 121.49673843383789,
+        "lower_limit": -34.93204973418491,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378293"
+    },
+    "PCFS_K-31-01_31TIA-314A_PV": {
+      "thresholds": {
+        "upper_limit": 130.2821785155797,
+        "lower_limit": -33.76117614910691,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378294"
+    },
+    "PCFS_K-31-01_31TIA-324C_PV": {
+      "thresholds": {
+        "upper_limit": 109.49858093261719,
+        "lower_limit": -33.409100158451075,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378295"
+    },
+    "PCFS_K-31-01_31TIA-315C_PV": {
+      "thresholds": {
+        "upper_limit": 126.50784236799026,
+        "lower_limit": -35.04714051115237,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378296"
+    },
+    "PCFS_K-31-01_31TIA-314B_PV": {
+      "thresholds": {
+        "upper_limit": 124.49970245361328,
+        "lower_limit": -32.364847043266614,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378298"
+    },
+    "PCFS_K-31-01_31TIA-302_PV": {
+      "thresholds": {
+        "upper_limit": 76.2541010272727,
+        "lower_limit": 8.825574202565754,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378299"
+    },
+    "PCFS_K-31-01_31TIA-316A_PV": {
+      "thresholds": {
+        "upper_limit": 125.42746833579608,
+        "lower_limit": -32.76095816875705,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378300"
+    },
+    "PCFS_K-31-01_31LICA-005_MV": {
+      "thresholds": {
+        "upper_limit": 100,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378306"
+    },
+    "PCFS_K-31-01_31TIA-314C_PV": {
+      "thresholds": {
+        "upper_limit": 122.99821472167969,
+        "lower_limit": -32.06371199476404,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378307"
+    },
+    "PCFS_K-31-01_31PIA-301_PV": {
+      "thresholds": {
+        "upper_limit": 21.270581737160683,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378309"
+    },
+    "PCFS_K-31-01_31TIA-316B_PV": {
+      "thresholds": {
+        "upper_limit": 118.49834060668945,
+        "lower_limit": -32.516758936808635,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378309"
+    },
+    "PCFS_K-31-01_31PIA-305_PV": {
+      "thresholds": {
+        "upper_limit": 19.440316066145897,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378310"
+    },
+    "PCFS_K-31-01_31PDIA-302_PV": {
+      "thresholds": {
+        "upper_limit": 1.3099888641061324,
+        "lower_limit": -0.4710127194289941,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378312"
+    },
+    "PCFS_K-31-01_31PIA-008_PV": {
+      "thresholds": {
+        "upper_limit": 111.9024499738589,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378313"
+    },
+    "PCFS_K-31-01_31TIA-316C_PV": {
+      "thresholds": {
+        "upper_limit": 115.49536514282227,
+        "lower_limit": -32.19502216904387,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378314"
+    },
+    "PCFS_K-31-01_31LICA-303_PV": {
+      "thresholds": {
+        "upper_limit": 100,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378315"
+    },
+    "PCFS_K-31-01_31TIA-007_PV": {
+      "thresholds": {
+        "upper_limit": 210.48791408538818,
+        "lower_limit": -38.55675983428955,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378316"
+    },
+    "PCFS_K-31-01_31TIA-317A_PV": {
+      "thresholds": {
+        "upper_limit": 88.49609756469727,
+        "lower_limit": -17.503599166870117,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378317"
+    },
+    "PCFS_K-31-01_31LIA302_PV": {
+      "thresholds": {
+        "upper_limit": 99.0,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378319"
+    },
+    "PCFS_K-31-01_31LIA304_PV": {
+      "thresholds": {
+        "upper_limit": 100,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378320"
+    },
+    "PCFS_K-31-01_31PI-009_PV": {
+      "thresholds": {
+        "upper_limit": 111.54656240460463,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378322"
+    },
+    "PCFS_K-31-01_31TIA-317B_PV": {
+      "thresholds": {
+        "upper_limit": 89.23749160766602,
+        "lower_limit": -18.96296817344181,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378323"
+    },
+    "PCFS_K-31-01_31TICA-008_PV": {
+      "thresholds": {
+        "upper_limit": 57.276221229142415,
+        "lower_limit": 13.912615108003742,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378324"
+    },
+    "PCFS_K-31-01_31SI-301B_PV": {
+      "thresholds": {
+        "upper_limit": 11639.551004171371,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "SPEED",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378325"
+    },
+    "PCFS_K-31-01_31LV-303A_MV": {
+      "thresholds": {
+        "upper_limit": 150.0,
+        "lower_limit": -50.0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378326"
+    },
+    "PCFS_K-31-01_31TIA-317C_PV": {
+      "thresholds": {
+        "upper_limit": 88.49609756469727,
+        "lower_limit": -17.503599166870117,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378327"
+    },
+    "PCFS_K-31-01_31LICA-007_MV": {
+      "thresholds": {
+        "upper_limit": 0.0,
+        "lower_limit": 0.0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378328"
+    },
+    "PCFS_K-31-01_31TIA-318A_PV": {
+      "thresholds": {
+        "upper_limit": 140.05442465634803,
+        "lower_limit": -39.52562718068612,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378329"
+    },
+    "PCFS_K-31-01_31LV-303B_MV": {
+      "thresholds": {
+        "upper_limit": 113.33895142525412,
+        "lower_limit": -48.460166931152344,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378331"
+    },
+    "PCFS_K-31-01_31TIA340_PV": {
+      "thresholds": {
+        "upper_limit": 59.234669177556746,
+        "lower_limit": 15.99735627670784,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378332"
+    },
+    "PCFS_K-31-01_31TIA-318B_PV": {
+      "thresholds": {
+        "upper_limit": 135.1576545534856,
+        "lower_limit": -37.41636685909687,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378334"
+    },
+    "PCFS_K-31-01_31SY-301_PV": {
+      "thresholds": {
+        "upper_limit": 149.99985122680664,
+        "lower_limit": -49.99995040893555,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378334"
+    },
+    "PCFS_K-31-01_31TIA-318C_PV": {
+      "thresholds": {
+        "upper_limit": 135.51257907226176,
+        "lower_limit": -39.17031254453481,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378335"
+    },
+    "PCFS_K-31-01_31KI-301_PV": {
+      "thresholds": {
+        "upper_limit": 10154.811767578125,
+        "lower_limit": -3384.937255859375,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378336"
+    },
+    "PCFS_K-31-01_31SVI-301_PV": {
+      "thresholds": {
+        "upper_limit": 154.63836832344532,
+        "lower_limit": -45.027495667861615,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378337"
+    },
+    "PCFS_K-31-01_31PI-010A_PV": {
+      "thresholds": {
+        "upper_limit": 200,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378338"
+    },
+    "PCFS_53PICA-115_PV": {
+      "thresholds": {
+        "upper_limit": 171.55364370904863,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378340"
+    },
+    "PCFS_K-31-01_31XIA-307X_PV": {
+      "thresholds": {
+        "upper_limit": 24.183919355600995,
+        "lower_limit": -7.919410148573366,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378342"
+    },
+    "PCFS_K-31-01_31SUMP-011_PV": {
+      "thresholds": {
+        "upper_limit": 240.33810424804688,
+        "lower_limit": -80.11270141601562,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378342"
+    },
+    "PCFS_K-31-01_31TI-012_PV": {
+      "thresholds": {
+        "upper_limit": 500,
+        "lower_limit": -50,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378345"
+    },
+    "PCFS_K-31-01_31FI-001_PV": {
+      "thresholds": {
+        "upper_limit": 114375.32859004766,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378346"
+    },
+    "PCFS_K-31-01_31XIA-307Y_PV": {
+      "thresholds": {
+        "upper_limit": 21.42046859020423,
+        "lower_limit": -9.87705443526594,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378347"
+    },
+    "PCFS_K-31-01_31TIA-009_PV": {
+      "thresholds": {
+        "upper_limit": 174.68352699279785,
+        "lower_limit": -25.612775802612305,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378348"
+    },
+    "PCFS_K-31-01_31FI-005_PV": {
+      "thresholds": {
+        "upper_limit": 239.0849086662238,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378349"
+    },
+    "PCFS_K-31-01_31-MARGIN34_PV": {
+      "thresholds": {
+        "upper_limit": 94.77558321532135,
+        "lower_limit": -42.96747491210826,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378350"
+    },
+    "PCFS_K-31-01_31XIA-308X_PV": {
+      "thresholds": {
+        "upper_limit": 15.352756503562542,
+        "lower_limit": -6.552473196066972,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378351"
+    },
+    "PCFS_K-31-01_31FI-002A_PV": {
+      "thresholds": {
+        "upper_limit": 97233.2745725161,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378353"
+    },
+    "PCFS_K-31-01_31-TTLSMRG34_PV": {
+      "thresholds": {
+        "upper_limit": 10.012200355529785,
+        "lower_limit": 10.012200355529785,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "LOW_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378354"
+    },
+    "PCFS_K-31-01_31PIA308A_PV": {
+      "thresholds": {
+        "upper_limit": 0.1,
+        "lower_limit": -1.2,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VACUUM_PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378355",
+      "process_type": "CONDENSER_VACUUM"
+    },
+    "PCFS_K-31-01_31XIA-308Y_PV": {
+      "thresholds": {
+        "upper_limit": 19.564274687535324,
+        "lower_limit": -8.483102592849633,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378356"
+    },
+    "PCFS_K-31-01_31PIA308B_PV": {
+      "thresholds": {
+        "upper_limit": 0.1,
+        "lower_limit": -1.2,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VACUUM_PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378357",
+      "process_type": "CONDENSER_VACUUM"
+    },
+    "PCFS_K-31-01_31FHC-003_MV": {
+      "thresholds": {
+        "upper_limit": 150.0,
+        "lower_limit": -50.0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378358"
+    },
+    "PCFS_K-31-01_31FI-002B_PV": {
+      "thresholds": {
+        "upper_limit": 97496.69005132039,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378359"
+    },
+    "PCFS_K-31-01_31ZIA-303A_PV": {
+      "thresholds": {
+        "upper_limit": 1.508127517814901,
+        "lower_limit": -0.927167280849374,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378360"
+    },
+    "PCFS_K-31-01_31PIA308C_PV": {
+      "thresholds": {
+        "upper_limit": 0.1,
+        "lower_limit": -1.2,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VACUUM_PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378361",
+      "process_type": "CONDENSER_VACUUM"
+    },
+    "PCFS_K-31-01_31PIA-002_PV": {
+      "thresholds": {
+        "upper_limit": 0.8968701205963411,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378362"
+    },
+    "PCFS_K-31-01_31ZIA-303B_PV": {
+      "thresholds": {
+        "upper_limit": 1.5109070119279524,
+        "lower_limit": -0.9397131752339803,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378364"
+    },
+    "PCFS_K-31-01_31TIA-303_PV": {
+      "thresholds": {
+        "upper_limit": 79.29090306913068,
+        "lower_limit": 3.468469489499391,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378365"
+    },
+    "PCFS_K-31-01_31TI-002_PV": {
+      "thresholds": {
+        "upper_limit": 70.86042537689208,
+        "lower_limit": 9.584871215091917,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378366"
+    },
+    "PCFS_K-31-01_31ZIA-303C_PV": {
+      "thresholds": {
+        "upper_limit": 1.5094308044094873,
+        "lower_limit": -0.9356090617084603,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378367"
+    },
+    "PCFS_K-31-01_31FVI-003_PV": {
+      "thresholds": {
+        "upper_limit": 150.72048664325848,
+        "lower_limit": -50.22698117000982,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378368"
+    },
+    "PCFS_K-31-01_31FI-006_PV": {
+      "thresholds": {
+        "upper_limit": 71.90076639688027,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378368"
+    },
+    "PCFS_K-31-01_31XIA-305X_PV": {
+      "thresholds": {
+        "upper_limit": 19.432631492614746,
+        "lower_limit": -6.936776177833907,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378369"
+    },
+    "PCFS_K-31-01_31FI-002ACT_PV": {
+      "thresholds": {
+        "upper_limit": 78092.88596618964,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378370"
+    },
+    "PCFS_K-31-01_31PI-101A_PV": {
+      "thresholds": {
+        "upper_limit": 40.00682020187378,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378373"
+    },
+    "PCFS_K-31-01_31XIA-309X_PV": {
+      "thresholds": {
+        "upper_limit": 10.14409429596785,
+        "lower_limit": -4.065560673895993,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378374"
+    },
+    "PCFS_K-31-01_31PI-101B_PV": {
+      "thresholds": {
+        "upper_limit": 39.94189116919888,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378375"
+    },
+    "PCFS_K-31-01_31LICA-001_MV": {
+      "thresholds": {
+        "upper_limit": 0.4907023385167122,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378376"
+    },
+    "PCFS_K-31-01_31TI-011_PV": {
+      "thresholds": {
+        "upper_limit": 500,
+        "lower_limit": -50,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378377"
+    },
+    "PCFS_K-31-01_31XIA-305Y_PV": {
+      "thresholds": {
+        "upper_limit": 19.507189289875964,
+        "lower_limit": -6.287775854128209,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378378"
+    },
+    "PCFS_K-31-01_31PI-004_PV": {
+      "thresholds": {
+        "upper_limit": 9.949269033110228,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378379"
+    },
+    "PCFS_K-31-01_31XIA-309Y_PV": {
+      "thresholds": {
+        "upper_limit": 10.705963179217102,
+        "lower_limit": -4.177240475465037,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378380"
+    },
+    "PCFS_K-31-01_31XIA-306X_PV": {
+      "thresholds": {
+        "upper_limit": 15.165535710687207,
+        "lower_limit": -6.358780450655397,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378381"
+    },
+    "PCFS_K-31-01_31FI-007_PV": {
+      "thresholds": {
+        "upper_limit": 166.39188498911318,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378382"
+    },
+    "PCFS_K-31-01_31TIA-003_PV": {
+      "thresholds": {
+        "upper_limit": 288.24719047546387,
+        "lower_limit": -50,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378383"
+    },
+    "PCFS_K-31-01_31PI-005_PV": {
+      "thresholds": {
+        "upper_limit": 11.301195040112361,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378384"
+    },
+    "PCFS_K-31-01_31XIA-306Y_PV": {
+      "thresholds": {
+        "upper_limit": 16.51907533196941,
+        "lower_limit": -6.954253141686886,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378387"
+    },
+    "PCFS_K-31-01_31XIA-310X_PV": {
+      "thresholds": {
+        "upper_limit": 14.791826725164672,
+        "lower_limit": -5.882697975925455,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378388"
+    },
+    "PCFS_K-31-01_31TIA-004_PV": {
+      "thresholds": {
+        "upper_limit": 55.93421300220534,
+        "lower_limit": 14.657660518533373,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378389"
+    },
+    "PCFS_K-31-01_31PY-101_PV": {
+      "thresholds": {
+        "upper_limit": 127.52825241218315,
+        "lower_limit": -49.99995040893555,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378390"
+    },
+    "PCFS_K-31-01_31SIA-306_PV": {
+      "thresholds": {
+        "upper_limit": 5.684649716347328,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "SPEED",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378390"
+    },
+    "PCFS_K-31-01_31LICA-003_MV": {
+      "thresholds": {
+        "upper_limit": 64.93068119393284,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "LEVEL",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378391"
+    },
+    "PCFS_K-31-01_31PVI-101_PV": {
+      "thresholds": {
+        "upper_limit": 131.8375972110137,
+        "lower_limit": -37.014223042574656,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378394"
+    },
+    "PCFS_K-31-01_31XIA-310Y_PV": {
+      "thresholds": {
+        "upper_limit": 11.484858554334004,
+        "lower_limit": -4.4296198467928365,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378395"
+    },
+    "PCFS_K-31-01_31KI-302_PV": {
+      "thresholds": {
+        "upper_limit": 14347.259765625,
+        "lower_limit": -4782.419921875,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378396"
+    },
+    "PCFS_K-31-01_31ZIA-304A_PV": {
+      "thresholds": {
+        "upper_limit": 0.9584227234125137,
+        "lower_limit": -0.20304213588436446,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378397"
+    },
+    "PCFS_K-31-01_31SIA-307_PV": {
+      "thresholds": {
+        "upper_limit": 7.2279512673426,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "SPEED",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378398"
+    },
+    "PCFS_K-31-01_31PI-006_PV": {
+      "thresholds": {
+        "upper_limit": 39.08414554595947,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378400"
+    },
+    "ST_PERFORMANCE": {
+      "thresholds": {
+        "upper_limit": 73.96146570606889,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378401"
+    },
+    "PCFS_K-31-01_31XIA-301X_PV": {
+      "thresholds": {
+        "upper_limit": 16.215105040388526,
+        "lower_limit": -7.086714343764601,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378402"
+    },
+    "PCFS_K-31-01_31ZIA-304B_PV": {
+      "thresholds": {
+        "upper_limit": 1.0255174085497856,
+        "lower_limit": -0.22719964074591797,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378403"
+    },
+    "PCFS_K-31-01_31TIA-320A_PV": {
+      "thresholds": {
+        "upper_limit": 100.18799730990085,
+        "lower_limit": -25.49717780297302,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378403"
+    },
+    "PCFS_K-31-01_31TIA-005_PV": {
+      "thresholds": {
+        "upper_limit": 268.9130573272705,
+        "lower_limit": -50,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378406"
+    },
+    "PCFS_K-31-01_31TIA-320B_PV": {
+      "thresholds": {
+        "upper_limit": 98.99733352661133,
+        "lower_limit": -26.90583648184809,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378407"
+    },
+    "PCFS_K-31-01_31ZIA-304C_PV": {
+      "thresholds": {
+        "upper_limit": 1.0686463013291359,
+        "lower_limit": -0.24120372099181017,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378408"
+    },
+    "PCFS_K-31-01_31-MARGIN12_PV": {
+      "thresholds": {
+        "upper_limit": 32.91341397406853,
+        "lower_limit": -15.762128695782012,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378409"
+    },
+    "PCFS_K-31-01_31XIA-301Y_PV": {
+      "thresholds": {
+        "upper_limit": 17.684061545917988,
+        "lower_limit": -7.7586469250217185,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378410"
+    },
+    "PCFS_K-31-01_31TIA-325A_PV": {
+      "thresholds": {
+        "upper_limit": 98.7502114407331,
+        "lower_limit": -27.25983033550007,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378411"
+    },
+    "PCFS_K-31-01_31TIA-320C_PV": {
+      "thresholds": {
+        "upper_limit": 97.49585723876953,
+        "lower_limit": -26.211624265218013,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378411"
+    },
+    "PCFS_K-31-01_31FI-003A_PV": {
+      "thresholds": {
+        "upper_limit": 92487.78018657753,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378412"
+    },
+    "PCFS_K-31-01_31-TTLSMRG12_PV": {
+      "thresholds": {
+        "upper_limit": 10.012200355529785,
+        "lower_limit": 10.012200355529785,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "LOW_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378414"
+    },
+    "PCFS_K-31-01_31TIA-325B_PV": {
+      "thresholds": {
+        "upper_limit": 101.01090355021606,
+        "lower_limit": -27.852314216768043,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378415"
+    },
+    "PCFS_K-31-01_31TIA-321A_PV": {
+      "thresholds": {
+        "upper_limit": 101.18481303543768,
+        "lower_limit": -26.315859712164226,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378416"
+    },
+    "PCFS_K-31-01_31XIA-302X_PV": {
+      "thresholds": {
+        "upper_limit": 25.081425879669414,
+        "lower_limit": -10.821450639556002,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378416"
+    },
+    "PCFS_K-31-01_31FHC-002_MV": {
+      "thresholds": {
+        "upper_limit": 150.0,
+        "lower_limit": -50.0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378417"
+    },
+    "PCFS_K-31-01_31TIA-325C_PV": {
+      "thresholds": {
+        "upper_limit": 95.99894714355469,
+        "lower_limit": -28.057388483868905,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378418"
+    },
+    "PCFS_K-31-01_31TIA-321B_PV": {
+      "thresholds": {
+        "upper_limit": 94.4974594116211,
+        "lower_limit": -24.840540985792586,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378419"
+    },
+    "PCFS_K-31-01_31FVI-002_PV": {
+      "thresholds": {
+        "upper_limit": 151.7234644368291,
+        "lower_limit": -50.898512206971645,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "UNKNOWN",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378420"
+    },
+    "PCFS_K-31-01_31TIA-326A_PV": {
+      "thresholds": {
+        "upper_limit": 105.445228464665,
+        "lower_limit": -27.853366117846043,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378421"
+    },
+    "PCFS_K-31-01_31TIA-321C_PV": {
+      "thresholds": {
+        "upper_limit": 97.83113554014955,
+        "lower_limit": -24.90870637133215,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378423"
+    },
+    "PCFS_K-31-01_31XIA-302Y_PV": {
+      "thresholds": {
+        "upper_limit": 26.838868408437904,
+        "lower_limit": -11.574020450540688,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378424"
+    },
+    "PCFS_K-31-01_31TIA-326B_PV": {
+      "thresholds": {
+        "upper_limit": 103.49721908569336,
+        "lower_limit": -28.811651273424076,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378425"
+    },
+    "PCFS_K-31-01_31FI-003B_PV": {
+      "thresholds": {
+        "upper_limit": 92508.66505917073,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378427"
+    },
+    "PCFS_K-31-01_31XIA-303X_PV": {
+      "thresholds": {
+        "upper_limit": 2.346950590610504,
+        "lower_limit": -0.3494409968455633,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378428"
+    },
+    "PCFS_K-31-01_31TIA-322A_PV": {
+      "thresholds": {
+        "upper_limit": 83.29483022514235,
+        "lower_limit": -19.185062280995282,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378429"
+    },
+    "PCFS_K-31-01_31TIA-311A_PV": {
+      "thresholds": {
+        "upper_limit": 82.83220161843437,
+        "lower_limit": -10.000749588012695,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378430"
+    },
+    "PCFS_K-31-01_31TIA-322B_PV": {
+      "thresholds": {
+        "upper_limit": 80.94824880823916,
+        "lower_limit": -18.568209974348584,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378431"
+    },
+    "PCFS_K-31-01_31TIA-326C_PV": {
+      "thresholds": {
+        "upper_limit": 109.14561627299929,
+        "lower_limit": -29.265081828334296,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378432"
+    },
+    "PCFS_K-31-01_31XIA-303Y_PV": {
+      "thresholds": {
+        "upper_limit": 2.406976157426834,
+        "lower_limit": -0.3275289262334506,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378433"
+    },
+    "PCFS_K-31-01_31TIA-311B_PV": {
+      "thresholds": {
+        "upper_limit": 81.91067259158362,
+        "lower_limit": -11.006314277648926,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378434"
+    },
+    "PCFS_K-31-01_31TIA-322C_PV": {
+      "thresholds": {
+        "upper_limit": 81.82147328176103,
+        "lower_limit": -18.73045432323683,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378435"
+    },
+    "PCFS_K-31-01_31TIA-327A_PV": {
+      "thresholds": {
+        "upper_limit": 96.16085439769412,
+        "lower_limit": -24.257669230826828,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378436"
+    },
+    "PCFS_K-31-01_31TIA-311C_PV": {
+      "thresholds": {
+        "upper_limit": 81.07150783013765,
+        "lower_limit": -11.006314277648926,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378436"
+    },
+    "PCFS_K-31-01_31TIA-323A_PV": {
+      "thresholds": {
+        "upper_limit": 84.10411609378247,
+        "lower_limit": -20.16839855788955,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378437"
+    },
+    "PCFS_K-31-01_31TIA-312A_PV": {
+      "thresholds": {
+        "upper_limit": 119.9538412636105,
+        "lower_limit": -30.4587761309471,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378438"
+    },
+    "PCFS_K-31-01_31TIA-323B_PV": {
+      "thresholds": {
+        "upper_limit": 83.42295825383935,
+        "lower_limit": -19.953258262962297,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378439"
+    },
+    "PCFS_K-31-01_31TIA-327B_PV": {
+      "thresholds": {
+        "upper_limit": 91.49906730651855,
+        "lower_limit": -23.985359218670226,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378440"
+    },
+    "PCFS_K-31-01_31XIA-304X_PV": {
+      "thresholds": {
+        "upper_limit": 9.792372956234637,
+        "lower_limit": -4.143075835456302,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378441"
+    },
+    "PCFS_K-31-01_31TIA-312B_PV": {
+      "thresholds": {
+        "upper_limit": 120.78497190740275,
+        "lower_limit": -30.19108927040061,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378442"
+    },
+    "PCFS_K-31-01_33FIQ-004_PV": {
+      "thresholds": {
+        "upper_limit": 110235.52898406982,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378444"
+    },
+    "PCFS_K-31-01_31TIA-323C_PV": {
+      "thresholds": {
+        "upper_limit": 81.99218454164682,
+        "lower_limit": -19.1804931076851,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378445"
+    },
+    "PCFS_K-31-01_31TIA-312C_PV": {
+      "thresholds": {
+        "upper_limit": 134.9963722229004,
+        "lower_limit": -36.928352979660104,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378446"
+    },
+    "PCFS_K-31-01_31TIA-327C_PV": {
+      "thresholds": {
+        "upper_limit": 92.9959716796875,
+        "lower_limit": -24.462899114407733,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378447"
+    },
+    "PCFS_K-31-01_31XIA-304Y_PV": {
+      "thresholds": {
+        "upper_limit": 9.617359466029237,
+        "lower_limit": -4.393096848279409,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "VIBRATION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378448"
+    },
+    "PCFS_K-31-01_31TIA-319A_PV": {
+      "thresholds": {
+        "upper_limit": 109.49858093261719,
+        "lower_limit": -32.87518533815811,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378449"
+    },
+    "PCFS_K-31-01_31ZIA-301A_PV": {
+      "thresholds": {
+        "upper_limit": 1.9982261657714844,
+        "lower_limit": -1.9994087219238281,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "LOW_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378450"
+    },
+    "PCFS_K-31-01_31PI-007_PV": {
+      "thresholds": {
+        "upper_limit": 41.73881125968549,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "PRESSURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378451"
+    },
+    "PCFS_K-31-01_31TIA-328A_PV": {
+      "thresholds": {
+        "upper_limit": 138.4840881710687,
+        "lower_limit": -41.83390613320702,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378452"
+    },
+    "PCFS_K-31-01_31TIA-319B_PV": {
+      "thresholds": {
+        "upper_limit": 119.60902910861532,
+        "lower_limit": -34.54992296665797,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378453"
+    },
+    "PCFS_K-31-01_31ZIA-302A_PV": {
+      "thresholds": {
+        "upper_limit": 1.0546728372573853,
+        "lower_limit": -0.6899330615997314,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378454"
+    },
+    "PCFS_K-31-01_31ZIA-301B_PV": {
+      "thresholds": {
+        "upper_limit": 1.9651130741111542,
+        "lower_limit": -1.9994087219238281,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "LOW_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378455"
+    },
+    "PCFS_K-31-01_31TIA-006_PV": {
+      "thresholds": {
+        "upper_limit": 40.71816937359984,
+        "lower_limit": 21.340697076033592,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378455"
+    },
+    "PCFS_K-31-01_31ZIA-302B_PV": {
+      "thresholds": {
+        "upper_limit": 1.022050574887544,
+        "lower_limit": -0.681129481177777,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378456"
+    },
+    "PCFS_K-31-01_31TIA-328B_PV": {
+      "thresholds": {
+        "upper_limit": 143.13511867191335,
+        "lower_limit": -46.51995153250853,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378457"
+    },
+    "PCFS_K-31-01_31TIA-319C_PV": {
+      "thresholds": {
+        "upper_limit": 113.99846649169922,
+        "lower_limit": -34.76705663116224,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378458"
+    },
+    "PCFS_K-31-01_31ZIA-301C_PV": {
+      "thresholds": {
+        "upper_limit": 1.007206216454506,
+        "lower_limit": -1.6690687388181686,
+        "outlier_sigma": 4.0
+      },
+      "sensitivity": "LOW_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378459"
+    },
+    "PCFS_K-31-01_31ZIA-302C_PV": {
+      "thresholds": {
+        "upper_limit": 1.031138720922172,
+        "lower_limit": -0.6876898454502225,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "POSITION",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378460"
+    },
+    "PCFS_K-31-01_31FI-003ACT_PV": {
+      "thresholds": {
+        "upper_limit": 4196.932935912088,
+        "lower_limit": 0,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "FLOW",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378461"
+    },
+    "PCFS_K-31-01_31TIA-313A_PV": {
+      "thresholds": {
+        "upper_limit": 141.09127412619372,
+        "lower_limit": -36.52511223564716,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378462"
+    },
+    "PCFS_K-31-01_31TIA-328C_PV": {
+      "thresholds": {
+        "upper_limit": 145.49761962890625,
+        "lower_limit": -46.3643010489567,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378463"
+    },
+    "PCFS_K-31-01_31TIA-315A_PV": {
+      "thresholds": {
+        "upper_limit": 118.85206604003906,
+        "lower_limit": -33.90193700411444,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378464"
+    },
+    "PCFS_K-31-01_31TIA-324A_PV": {
+      "thresholds": {
+        "upper_limit": 123.070859790442,
+        "lower_limit": -36.075515381194016,
+        "outlier_sigma": 2.5
+      },
+      "sensitivity": "HIGH_SENSITIVITY",
+      "tag_type": "TEMPERATURE",
+      "baseline_period": "3_months",
+      "last_updated": "2025-09-13T12:51:23.378465"
+    }
+  },
+  "global_settings": {
+    "default_sigma_threshold": 3.0,
+    "min_data_points_required": 100,
+    "outlier_rate_tolerance": 5.0,
+    "sensitivity_mapping": {
+      "LOW_SENSITIVITY": {
+        "sigma": 4.0,
+        "contamination": 0.01
+      },
+      "MEDIUM_SENSITIVITY": {
+        "sigma": 3.0,
+        "contamination": 0.03
+      },
+      "HIGH_SENSITIVITY": {
+        "sigma": 2.5,
+        "contamination": 0.05
+      }
+    }
+  }
+}

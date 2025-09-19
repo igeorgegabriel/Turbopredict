@@ -1,0 +1,76 @@
+# Python
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+.env
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Data files (if sensitive)
+data/raw/*.xlsx
+data/raw/*.xls
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+~
+
+# Excel temp files
+~.xlsx
+~.xls
+
+# DuckDB files
+*.duckdb
+*.db
+
+# Reports (optional - remove if you want to commit reports)
+reports/*.png
+reports/*.pdf
+reports/*.html
+
+# Environment variables
+.env.local
+.env.production

@@ -12,6 +12,9 @@ from datetime import datetime, timedelta
 from pathlib import Path
 import glob
 
+# Import stale data detector
+from pi_monitor.stale_data_detector import StaleDataDetector, add_stale_data_warnings_to_plot
+
 # Add project root to path
 sys.path.insert(0, os.path.abspath('.'))
 
@@ -89,7 +92,28 @@ def create_enhanced_plots():
         if recent_data.empty:
             print(f"  No recent data for {unit}")
             continue
-            
+
+        # Analyze data freshness for this unit
+        print(f"  Analyzing data freshness...")
+        stale_detector = StaleDataDetector(max_age_hours=24.0)  # 24 hours threshold
+        freshness_analysis = stale_detector.analyze_tag_freshness(recent_data)
+
+        if freshness_analysis.get('stale_tags'):
+            stale_count = len(freshness_analysis['stale_tags'])
+            print(f"    ⚠️  Found {stale_count} stale tags (>24h old)")
+
+            # Generate and save stale data report
+            stale_report = stale_detector.generate_stale_data_report(recent_data, unit)
+            report_file = unit_dir / f"{unit}_stale_data_report.txt"
+            with open(report_file, 'w') as f:
+                f.write(stale_report)
+            print(f"    📄 Stale data report saved: {report_file.name}")
+        else:
+            print(f"    ✅ All tags have fresh data")
+
+        # Store freshness analysis for plotting
+        globals()['_current_freshness_analysis'] = freshness_analysis
+
         # Run enhanced anomaly detection (same as CLI option [2])
         print(f"  Running enhanced anomaly detection...")
         try:
@@ -146,13 +170,22 @@ def create_enhanced_plots():
 
 def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir):
     """Create enhanced plot for a specific tag using detection results"""
-    
+
     # Get tag data
     tag_data = data[data['tag'] == tag].copy()
     if tag_data.empty or len(tag_data) < 10:
         return
-        
+
     tag_data = tag_data.sort_values('time')
+
+    # Get freshness information for this tag
+    freshness_info = {}
+    try:
+        current_freshness = globals().get('_current_freshness_analysis', {})
+        tag_details = current_freshness.get('tag_details', {})
+        freshness_info = tag_details.get(str(tag), {})
+    except Exception:
+        pass
     
     # Get detection information
     count = tag_info.get('count', 0)
@@ -160,9 +193,38 @@ def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir):
     method = tag_info.get('method', 'Unknown')
     confidence = tag_info.get('confidence', 'UNKNOWN')
     
-    # Extract MTD and Isolation Forest counts
-    mtd_count = tag_info.get('mtd_count', 0)
-    iso_count = tag_info.get('isolation_forest_count', 0)
+    # Extract MTD and Isolation Forest counts from verification_breakdown
+    verification_breakdown = tag_info.get('verification_breakdown', {})
+    mtd_count = verification_breakdown.get('mtd_confirmed', 0)
+    iso_count = verification_breakdown.get('if_confirmed', 0)
+    candidates_count = verification_breakdown.get('candidates', 0)
+
+    # Extract primary detection counts from global details
+    sigma_count = 0
+    ae_count = 0
+    try:
+        details = globals().get('_last_anomaly_details', {})
+
+        # Get 2.5-sigma count for this tag
+        sigma_times_by_tag = details.get('sigma_2p5_times_by_tag', {})
+        if tag in sigma_times_by_tag:
+            sigma_count = len(sigma_times_by_tag[tag])
+
+        # Get AutoEncoder count (AE detects across all tags, so estimate this tag's share)
+        ae_times = details.get('ae_times', [])
+        if ae_times:
+            # Estimate AE detections for this tag based on tag's proportion of total anomalies
+            total_anomalies_all_tags = sum(len(times) for times in sigma_times_by_tag.values()) or 1
+            tag_proportion = sigma_count / total_anomalies_all_tags if total_anomalies_all_tags > 0 else 0
+            ae_count = int(len(ae_times) * tag_proportion)
+    except Exception as e:
+        # Non-fatal: continue with verification counts only
+        pass
+
+    # Fallback to old format for backward compatibility
+    if mtd_count == 0 and iso_count == 0:
+        mtd_count = tag_info.get('mtd_count', 0)
+        iso_count = tag_info.get('isolation_forest_count', 0)
     
     # Get thresholds if available
     thresholds = tag_info.get('thresholds', {})
@@ -270,23 +332,45 @@ def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir):
         ax1.axhline(y=upper_limit, color='orange', linestyle='--', alpha=0.8, label='Upper Threshold')
         ax1.axhline(y=lower_limit, color='orange', linestyle='--', alpha=0.8, label='Lower Threshold')
     
-    # Add enhanced detection info
+    # Add enhanced detection info with freshness data
+    freshness_text = ""
+    if freshness_info:
+        age_hours = freshness_info.get('age_hours', 0)
+        staleness_level = freshness_info.get('staleness_level', 'UNKNOWN')
+        if age_hours > 0:
+            if age_hours < 24:
+                freshness_text = f"\nData Freshness: {age_hours:.1f}h ago ({staleness_level})"
+            else:
+                freshness_text = f"\nData Freshness: {age_hours/24:.1f}d ago ({staleness_level})"
+
     detection_text = f"""Enhanced Detection Results:
 Method: {method}
 Total Anomalies: {count:,} ({rate:.2f}%)
-MTD Count: {mtd_count}
-Isolation Forest Count: {iso_count}
+
+Primary Detection:
+├─ 2.5-Sigma: {sigma_count}
+└─ AutoEncoder: {ae_count}
+
+Verification:
+├─ MTD Verified: {mtd_count}
+└─ Isolation Forest: {iso_count}
+
 Confidence: {confidence}
-Baseline Tuned: {tag_info.get('baseline_tuned', False)}"""
+Baseline Tuned: {tag_info.get('baseline_tuned', False)}{freshness_text}"""
     
-    ax1.text(0.02, 0.98, detection_text, transform=ax1.transAxes, fontsize=9, 
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
+    ax1.text(0.98, 0.02, detection_text, transform=ax1.transAxes, fontsize=9,
+            verticalalignment='bottom', horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
     
-    ax1.set_title(f'{unit} - {tag}\nEnhanced Anomaly Detection (MTD + Isolation Forest)', 
+    ax1.set_title(f'{unit} - {tag}\nEnhanced Anomaly Detection (MTD + Isolation Forest)',
                  fontweight='bold', fontsize=12)
     ax1.set_ylabel('Value')
     ax1.grid(True, alpha=0.3)
     ax1.legend(loc='upper right', fontsize=8)
+
+    # Add stale data warnings if applicable
+    if freshness_info:
+        add_stale_data_warnings_to_plot(ax1, freshness_info)
     
     # Plot 2: Distribution with detection methods
     ax2.hist(tag_data['value'], bins=50, alpha=0.7, color='skyblue', edgecolor='black', label='Distribution')
@@ -313,8 +397,9 @@ Min: {tag_data['value'].min():.3f}
 Max: {tag_data['value'].max():.3f}
 Data Points: {len(tag_data):,}"""
     
-    ax2.text(0.75, 0.95, stats_text, transform=ax2.transAxes, fontsize=9, 
-            verticalalignment='top', bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    ax2.text(0.98, 0.02, stats_text, transform=ax2.transAxes, fontsize=9,
+            verticalalignment='bottom', horizontalalignment='right',
+            bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     ax2.set_title('Value Distribution Analysis', fontweight='bold')
     ax2.set_xlabel('Value')
@@ -322,33 +407,71 @@ Data Points: {len(tag_data):,}"""
     ax2.grid(True, alpha=0.3)
     ax2.legend()
     
-    # Plot 3: Detection method breakdown
-    if mtd_count > 0 or iso_count > 0:
+    # Plot 3: Detection method breakdown - Show all four methods
+    if count > 0:  # Use total count instead of just mtd_count or iso_count
         methods = []
         counts = []
         colors = []
-        
+        categories = []
+
+        # PRIMARY DETECTION METHODS (Candidates)
+        if sigma_count > 0:
+            methods.append(f'2.5-Sigma\n({sigma_count})')
+            counts.append(sigma_count)
+            colors.append('orange')
+            categories.append('Primary')
+
+        if ae_count > 0:
+            methods.append(f'AutoEncoder\n({ae_count})')
+            counts.append(ae_count)
+            colors.append('red')
+            categories.append('Primary')
+
+        # VERIFICATION METHODS (Confirmed)
         if mtd_count > 0:
-            methods.append(f'MTD\n({mtd_count})')
+            methods.append(f'MTD Verified\n({mtd_count})')
             counts.append(mtd_count)
             colors.append('blue')
-            
+            categories.append('Verified')
+
         if iso_count > 0:
             methods.append(f'Isolation Forest\n({iso_count})')
             counts.append(iso_count)
             colors.append('green')
-        
+            categories.append('Verified')
+
+        # If we have verified anomalies but no breakdown, show total
+        if not methods and count > 0:
+            methods.append(f'Enhanced Detection\n({count})')
+            counts.append(count)
+            colors.append('purple')
+            categories.append('Total')
+
+        # Create the bar chart
         bars = ax3.bar(methods, counts, color=colors, alpha=0.7)
-        ax3.set_title('Detection Method Breakdown', fontweight='bold')
+        ax3.set_title('Detection Method Breakdown\n(Primary Detection → Verification)', fontweight='bold', fontsize=10)
         ax3.set_ylabel('Anomaly Count')
         ax3.grid(True, alpha=0.3)
-        
+
         # Add value labels on bars
-        for bar, count in zip(bars, counts):
-            ax3.text(bar.get_x() + bar.get_width()/2, bar.get_height() + max(counts)*0.01,
-                    str(count), ha='center', va='bottom', fontweight='bold')
+        if counts and max(counts) > 0:
+            for bar, count_val in zip(bars, counts):
+                height = bar.get_height()
+                ax3.text(bar.get_x() + bar.get_width()/2, height + max(counts)*0.01,
+                        str(count_val), ha='center', va='bottom', fontweight='bold', fontsize=9)
+
+        # Add legend to distinguish primary vs verification
+        from matplotlib.patches import Patch
+        legend_elements = [
+            Patch(facecolor='orange', alpha=0.7, label='2.5-Sigma (Primary)'),
+            Patch(facecolor='red', alpha=0.7, label='AutoEncoder (Primary)'),
+            Patch(facecolor='blue', alpha=0.7, label='MTD (Verified)'),
+            Patch(facecolor='green', alpha=0.7, label='Isolation Forest (Verified)')
+        ]
+        ax3.legend(handles=legend_elements, loc='upper right', fontsize=8)
+
     else:
-        ax3.text(0.5, 0.5, 'No anomalies detected by enhanced methods', 
+        ax3.text(0.5, 0.5, 'No anomalies detected by enhanced methods',
                 ha='center', va='center', transform=ax3.transAxes, fontsize=12)
         ax3.set_title('Detection Method Breakdown', fontweight='bold')
     

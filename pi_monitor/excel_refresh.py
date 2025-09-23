@@ -71,8 +71,10 @@ def refresh_with_xlwings(xlsx: Path, settle_seconds: int = 5) -> None:
         
         # Save to original filename - this avoids the save prompt
         # because Excel thinks it's creating a new file
-        print(f"[excel] Saving refreshed data to: {original_path}")
-        wb.api.SaveAs(str(original_path))
+        # Use absolute path to avoid Excel path resolution issues
+        absolute_original = original_path.resolve()
+        print(f"[excel] Saving refreshed data to: {absolute_original}")
+        wb.api.SaveAs(str(absolute_original))
         wb.close()
         
     finally:
@@ -149,7 +151,8 @@ def refresh_with_working_copy(xlsx: Path, settle_seconds: int = 5) -> None:
         
         # Copy refreshed data back to original
         import shutil
-        shutil.copy2(str(working_copy), str(xlsx))
+        absolute_xlsx = xlsx.resolve()
+        shutil.copy2(str(working_copy), str(absolute_xlsx))
         logger.info(f"Copied refreshed data back to: {xlsx}")
         
         elapsed = time.time() - t0

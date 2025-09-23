@@ -1343,15 +1343,58 @@ class ParquetAutoScanner:
         return recommendations
     
     def _get_excel_file_for_unit(self, unit: str, default_xlsx_path: Path = None) -> Path:
-        """Determine the correct Excel file for a specific unit based on its plant."""
+        """Determine the correct Excel file for a specific unit based on intelligent unit name patterns.
+
+        This method uses unit naming conventions instead of depending on existing data,
+        which fixes the circular dependency issue where stale units can't be refreshed
+        because their plant info is missing from stale data.
+        """
+        project_root = Path(__file__).resolve().parents[1]
+
+        # Primary method: Intelligent unit name pattern matching
+        unit_upper = unit.upper()
+
+        # K-units (K-12-01, K-16-01, K-19-01, K-31-01) -> PCFS
+        if unit_upper.startswith('K-') and '-' in unit_upper:
+            pcfs_paths = [
+                project_root / "excel" / "PCFS_Automation_2.xlsx",
+                project_root / "excel" / "PCFS_Automation.xlsx"
+            ]
+            for path in pcfs_paths:
+                if path.exists():
+                    return path
+
+        # 07-MT01 units -> ABF
+        elif unit_upper.startswith('07-MT01') or unit_upper.startswith('ABF'):
+            abf_path = project_root / "excel" / "ABF_Automation.xlsx"
+            if abf_path.exists():
+                return abf_path
+
+        # PCMSB units -> PCMSB ONLY (no PCFS fallback - different plants!)
+        # PCMSB units include: units starting with PCMSB, containing PCMSB, or C-units (C-104, C-201, etc.)
+        elif (unit_upper.startswith('PCMSB') or 'PCMSB' in unit_upper or
+              unit_upper.startswith('C-')):
+            pcmsb_path = project_root / "excel" / "PCMSB_Automation.xlsx"
+            if pcmsb_path.exists():
+                return pcmsb_path
+            else:
+                raise RuntimeError(f"PCMSB unit '{unit}' requires PCMSB_Automation.xlsx but file not found")
+
+        # ABFSB units -> ABFSB (with ABF fallback)
+        elif unit_upper.startswith('ABFSB') or 'ABFSB' in unit_upper:
+            abfsb_paths = [
+                project_root / "excel" / "ABFSB_Automation.xlsx",
+                project_root / "excel" / "ABF_Automation.xlsx"     # Fallback
+            ]
+            for path in abfsb_paths:
+                if path.exists():
+                    return path
+
+        # Secondary method: Try to get plant from existing data (if available)
         try:
-            # Get unit data to determine plant
             unit_data = self.db.get_unit_data(unit)
             if not unit_data.empty and 'plant' in unit_data.columns:
                 plant = unit_data['plant'].iloc[0].upper()
-
-                # Plant-specific Excel files (use absolute paths)
-                project_root = Path(__file__).resolve().parents[1]
 
                 if plant.startswith("ABF"):
                     abf_path = project_root / "excel" / "ABF_Automation.xlsx"
@@ -1361,35 +1404,27 @@ class ParquetAutoScanner:
                     pcmsb_path = project_root / "excel" / "PCMSB_Automation.xlsx"
                     if pcmsb_path.exists():
                         return pcmsb_path
-                    # Fallback: reuse PCFS workbook for PCMSB if dedicated file missing
-                    pcmsb_path = project_root / "excel" / "PCFS_Automation_2.xlsx"
-                    if pcmsb_path.exists():
-                        return pcmsb_path
-                    pcmsb_path = project_root / "excel" / "PCFS_Automation.xlsx"
-                    if pcmsb_path.exists():
-                        return pcmsb_path
+                    else:
+                        raise RuntimeError(f"PCMSB plant requires PCMSB_Automation.xlsx but file not found")
                 elif plant.startswith("PCFS"):
                     pcfs_path = project_root / "excel" / "PCFS_Automation_2.xlsx"
                     if pcfs_path.exists():
                         return pcfs_path
-                    # Fallback to original PCFS file
-                    pcfs_path = project_root / "excel" / "PCFS_Automation.xlsx"
-                    if pcfs_path.exists():
-                        return pcfs_path
         except Exception:
+            # Ignore data access errors - rely on pattern matching above
             pass
 
-        # Fallback to default or first available
+        # Fallback to default if provided
         if default_xlsx_path and default_xlsx_path.exists():
             return default_xlsx_path
 
-        # Last resort - find any available Excel file (use absolute paths)
-        project_root = Path(__file__).resolve().parents[1]
+        # Last resort - find any available Excel file (prioritize PCFS for unknown units)
         excel_paths = [
-            project_root / "excel" / "PCFS_Automation_2.xlsx",
+            project_root / "excel" / "PCFS_Automation_2.xlsx",  # Most common
             project_root / "excel" / "PCFS_Automation.xlsx",
-            project_root / "excel" / "PCMSB_Automation.xlsx",
             project_root / "excel" / "ABF_Automation.xlsx",
+            project_root / "excel" / "PCMSB_Automation.xlsx",
+            project_root / "excel" / "ABFSB_Automation.xlsx",
             project_root / "data" / "raw" / "Automation.xlsx",
             project_root / "Automation.xlsx"
         ]
@@ -1586,8 +1621,35 @@ class ParquetAutoScanner:
                 print(f"   Processing data for {unit}...")
                 from .ingest import load_latest_frame, write_parquet
 
-                # Load fresh data using the correct Excel file
-                df = load_latest_frame(unit_xlsx_path, unit=unit)
+                # Load fresh data using the correct Excel file and unit-specific sheet
+                # Determine correct sheet name for the unit
+                if unit.startswith('K-'):
+                    # PCFS units use DL_K pattern (e.g., K-31-01 -> DL_K_31_01)
+                    sheet_name = f"DL_{unit.replace('-', '_')}"
+                elif unit.startswith('C-'):
+                    # PCMSB units use DL_C pattern (e.g., C-104 -> DL_C_104)
+                    sheet_name = f"DL_{unit.replace('-', '_')}"
+                else:
+                    # Default to first sheet for other units
+                    sheet_name = None
+
+                # Verify sheet exists before using it
+                import pandas as pd
+                try:
+                    excel_file = pd.ExcelFile(unit_xlsx_path)
+                    available_sheets = excel_file.sheet_names
+                    if sheet_name and sheet_name not in available_sheets:
+                        print(f"   WARNING: Sheet '{sheet_name}' not found in {unit_xlsx_path.name}")
+                        print(f"   Available sheets: {available_sheets}")
+                        print(f"   Falling back to first sheet: {available_sheets[0] if available_sheets else 'None'}")
+                        sheet_name = available_sheets[0] if available_sheets else None
+                    elif sheet_name:
+                        print(f"   Using sheet: {sheet_name}")
+                except Exception as e:
+                    print(f"   Warning: Error checking sheets in {unit_xlsx_path.name}: {e}")
+                    sheet_name = None
+
+                df = load_latest_frame(unit_xlsx_path, unit=unit, sheet_name=sheet_name)
                 if df.empty:
                     print(f"   WARNING: Excel returned no data for {unit}; switching to direct tag retrieval...")
                     df = self._load_unit_from_tags(unit, unit_xlsx_path)

@@ -59,24 +59,42 @@ def create_enhanced_plots():
         
         # Find parquet files for this unit
         unit_files = glob.glob(f"data/processed/*{unit}*.parquet")
-        
+
         if not unit_files:
             print(f"  No parquet files found for {unit}")
             continue
-            
+
         print(f"  Found {len(unit_files)} file(s)")
-        
+
+        # FIXED: Intelligent file selection - prioritize most recent dedup file
+        selected_file = None
+
+        # Strategy 1: Prefer dedup files (more processed, usually more current)
+        dedup_files = [f for f in unit_files if 'dedup' in f]
+        if dedup_files:
+            # Get the most recently modified dedup file
+            selected_file = max(dedup_files, key=lambda x: os.path.getmtime(x))
+            print(f"  Using most recent dedup file: {os.path.basename(selected_file)}")
+        else:
+            # Strategy 2: If no dedup files, use most recent regular file
+            selected_file = max(unit_files, key=lambda x: os.path.getmtime(x))
+            print(f"  Using most recent file: {os.path.basename(selected_file)}")
+
+        # Load only the selected file (no more concatenation confusion)
         all_unit_data = pd.DataFrame()
-        
-        # Load all data for this unit
-        for file in unit_files:
-            try:
-                df = pd.read_parquet(file)
-                all_unit_data = pd.concat([all_unit_data, df], ignore_index=True)
-                print(f"    Loaded {len(df):,} records from {os.path.basename(file)}")
-            except Exception as e:
-                print(f"    Error loading {file}: {e}")
-                continue
+        try:
+            all_unit_data = pd.read_parquet(selected_file)
+            print(f"    Loaded {len(all_unit_data):,} records from {os.path.basename(selected_file)}")
+
+            # Verify data freshness
+            if 'time' in all_unit_data.columns:
+                latest_time = pd.to_datetime(all_unit_data['time']).max()
+                data_age = (datetime.now() - latest_time).total_seconds() / 3600
+                print(f"    Data latest timestamp: {latest_time}")
+                print(f"    Data age: {data_age:.1f} hours")
+        except Exception as e:
+            print(f"    Error loading {selected_file}: {e}")
+            continue
         
         if all_unit_data.empty:
             print(f"  No data loaded for {unit}")
@@ -149,7 +167,8 @@ def create_enhanced_plots():
             # Create plots for problematic tags
             for i, (tag, tag_info) in enumerate(top_tags):
                 print(f"      Plotting {i+1}/{len(top_tags)}: {tag}")
-                create_enhanced_tag_plot(unit, tag, tag_info, recent_data, unit_dir)
+                # Pass anomaly details directly to plotting function
+                create_enhanced_tag_plot(unit, tag, tag_info, recent_data, unit_dir, anomaly_results.get('details', {}))
             
             # Create unit summary
             create_unit_summary(unit, unit_dir, recent_data, anomaly_results, top_tags)
@@ -168,7 +187,7 @@ def create_enhanced_plots():
     
     return output_dir
 
-def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir):
+def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir, anomaly_details=None):
     """Create enhanced plot for a specific tag using detection results"""
 
     # Get tag data
@@ -199,26 +218,39 @@ def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir):
     iso_count = verification_breakdown.get('if_confirmed', 0)
     candidates_count = verification_breakdown.get('candidates', 0)
 
-    # Extract primary detection counts from global details
+    # Extract primary detection counts from passed details (not unreliable globals)
     sigma_count = 0
     ae_count = 0
     try:
-        details = globals().get('_last_anomaly_details', {})
+        # Use passed anomaly_details or fallback to global (for backward compatibility)
+        details = anomaly_details if anomaly_details is not None else globals().get('_last_anomaly_details', {})
 
         # Get 2.5-sigma count for this tag
         sigma_times_by_tag = details.get('sigma_2p5_times_by_tag', {})
         if tag in sigma_times_by_tag:
             sigma_count = len(sigma_times_by_tag[tag])
 
-        # Get AutoEncoder count (AE detects across all tags, so estimate this tag's share)
+        # Get AutoEncoder count - improved logic
         ae_times = details.get('ae_times', [])
         if ae_times:
-            # Estimate AE detections for this tag based on tag's proportion of total anomalies
-            total_anomalies_all_tags = sum(len(times) for times in sigma_times_by_tag.values()) or 1
-            tag_proportion = sigma_count / total_anomalies_all_tags if total_anomalies_all_tags > 0 else 0
-            ae_count = int(len(ae_times) * tag_proportion)
+            # For single-tag units, assign all AE anomalies to that tag
+            # For multi-tag units, estimate based on proportion
+            unique_tags_with_sigma = len(sigma_times_by_tag)
+            if unique_tags_with_sigma == 1:
+                # Single tag gets all AE anomalies
+                ae_count = len(ae_times)
+            elif unique_tags_with_sigma > 1:
+                # Multi-tag: estimate this tag's share based on sigma proportion
+                total_anomalies_all_tags = sum(len(times) for times in sigma_times_by_tag.values()) or 1
+                tag_proportion = sigma_count / total_anomalies_all_tags if total_anomalies_all_tags > 0 else 0
+                ae_count = int(len(ae_times) * tag_proportion)
+            else:
+                # No sigma candidates but AE exists - distribute evenly among all tags in data
+                unique_tags_in_data = data['tag'].nunique() if 'tag' in data.columns else 1
+                ae_count = int(len(ae_times) / unique_tags_in_data)
     except Exception as e:
         # Non-fatal: continue with verification counts only
+        print(f"Warning: Primary detection count extraction failed: {e}")
         pass
 
     # Fallback to old format for backward compatibility
@@ -270,9 +302,10 @@ def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir):
         mean_stable = float(tag_data['value'].mean())
         std_stable = float(tag_data['value'].std())
 
-    # Overlay markers from detection details (2.5Ïƒ candidates, AE, MTD, IF)
+    # Overlay markers from detection details (2.5σ candidates, AE, MTD, IF)
     try:
-        details = globals().get('_last_anomaly_details') or {}
+        # Use passed anomaly_details or fallback to global (for backward compatibility)
+        details = anomaly_details if anomaly_details is not None else globals().get('_last_anomaly_details', {})
         sigma_by_tag = details.get('sigma_2p5_times_by_tag', {}) if isinstance(details, dict) else {}
         verify_by_tag = details.get('verification_times_by_tag', {}) if isinstance(details, dict) else {}
         ae_times = details.get('ae_times', []) if isinstance(details, dict) else []
@@ -287,26 +320,29 @@ def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir):
                 series_t = series_t.dt.tz_convert(None)
             return series_t.isin(tset).values
 
-        # 2.5-sigma candidate points
+        # 2.5-sigma candidate points (larger, more visible)
         sigma_times = sigma_by_tag.get(tag, []) or []
         ms = _mask_times(sigma_times)
         if ms.any():
-            ax1.scatter(tag_data['time'][ms], tag_data['value'][ms], facecolors='none', edgecolors='purple', s=40, label='2.5Ïƒ candidate', zorder=6)
+            ax1.scatter(tag_data['time'][ms], tag_data['value'][ms], facecolors='none', edgecolors='purple',
+                       s=80, linewidth=2, label='2.5σ candidate', zorder=8, alpha=0.8)
 
-        # MTD and IF confirmations
+        # MTD and IF confirmations (larger, more visible)
         vdetail = verify_by_tag.get(tag, {}) or {}
         mtd_times = vdetail.get('mtd', []) or []
         if_times = vdetail.get('if', []) or []
         mm = _mask_times(mtd_times)
         if mm.any():
-            ax1.scatter(tag_data['time'][mm], tag_data['value'][mm], c='red', marker='x', s=50, label='MTD confirmed', zorder=7)
+            ax1.scatter(tag_data['time'][mm], tag_data['value'][mm], c='red', marker='X',
+                       s=120, label='MTD confirmed', zorder=9, edgecolors='darkred', linewidth=2)
         im = _mask_times(if_times)
         if im.any():
-            ax1.scatter(tag_data['time'][im], tag_data['value'][im], c='orange', marker='s', s=30, label='IF confirmed', zorder=7)
+            ax1.scatter(tag_data['time'][im], tag_data['value'][im], c='orange', marker='s',
+                       s=60, label='IF confirmed', zorder=9, edgecolors='darkorange', linewidth=1.5, alpha=0.8)
 
-        # AE times are global; draw faint vertical lines
+        # AE times are global; draw more visible vertical lines
         for t in pd.to_datetime(ae_times):
-            ax1.axvline(t, color='gray', linestyle='--', alpha=0.15)
+            ax1.axvline(t, color='cyan', linestyle=':', alpha=0.4, linewidth=1)
     except Exception:
         pass
     
@@ -357,16 +393,16 @@ Verification:
 
 Confidence: {confidence}
 Baseline Tuned: {tag_info.get('baseline_tuned', False)}{freshness_text}"""
-    
-    ax1.text(0.98, 0.02, detection_text, transform=ax1.transAxes, fontsize=9,
-            verticalalignment='bottom', horizontalalignment='right',
+
+    ax1.text(0.02, 0.02, detection_text, transform=ax1.transAxes, fontsize=9,
+            verticalalignment='bottom', horizontalalignment='left',
             bbox=dict(boxstyle='round', facecolor='lightblue', alpha=0.8))
     
     ax1.set_title(f'{unit} - {tag}\nEnhanced Anomaly Detection (MTD + Isolation Forest)',
                  fontweight='bold', fontsize=12)
     ax1.set_ylabel('Value')
     ax1.grid(True, alpha=0.3)
-    ax1.legend(loc='upper right', fontsize=8)
+    ax1.legend(loc='upper left', fontsize=8)
 
     # Add stale data warnings if applicable
     if freshness_info:
@@ -396,9 +432,9 @@ Stable Std: {std_stable:.3f}
 Min: {tag_data['value'].min():.3f}
 Max: {tag_data['value'].max():.3f}
 Data Points: {len(tag_data):,}"""
-    
-    ax2.text(0.98, 0.02, stats_text, transform=ax2.transAxes, fontsize=9,
-            verticalalignment='bottom', horizontalalignment='right',
+
+    ax2.text(0.02, 0.02, stats_text, transform=ax2.transAxes, fontsize=9,
+            verticalalignment='bottom', horizontalalignment='left',
             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     ax2.set_title('Value Distribution Analysis', fontweight='bold')
@@ -468,7 +504,7 @@ Data Points: {len(tag_data):,}"""
             Patch(facecolor='blue', alpha=0.7, label='MTD (Verified)'),
             Patch(facecolor='green', alpha=0.7, label='Isolation Forest (Verified)')
         ]
-        ax3.legend(handles=legend_elements, loc='upper right', fontsize=8)
+        ax3.legend(handles=legend_elements, loc='upper left', fontsize=8)
 
     else:
         ax3.text(0.5, 0.5, 'No anomalies detected by enhanced methods',

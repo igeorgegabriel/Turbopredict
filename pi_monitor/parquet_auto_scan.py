@@ -1,5 +1,4 @@
-﻿"""
-Auto-scan functionality using existing Parquet files for TURBOPREDICT X PROTEAN
+"""Auto-scan functionality using existing Parquet files for TURBOPREDICT X PROTEAN
 Works with real data in the data directory
 """
 
@@ -11,6 +10,7 @@ import pandas as pd
 import logging
 from datetime import datetime, timedelta
 import time
+import os
 import json
 
 from .parquet_database import ParquetDatabase
@@ -19,6 +19,7 @@ from .excel_refresh import refresh_excel_safe
 from .breakout import detect_breakouts
 from .batch import build_unit_from_tags
 from .clean import dedup_parquet
+from .memory_optimizer import MemoryMonitor, ChunkedProcessor, StreamingParquetHandler, memory_efficient_dedup, optimize_dataframe_memory
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +29,24 @@ class ParquetAutoScanner:
     
     def __init__(self, config: Config = None, data_dir: Path = None):
         """Initialize auto-scanner for Parquet files.
-        
+
         Args:
             config: Configuration object
             data_dir: Path to data directory
         """
         self.config = config or Config()
-        
+
         if data_dir is None:
             # Default to data directory relative to current location
             current_dir = Path(__file__).parent.parent
             data_dir = current_dir / "data"
-        
+
         self.db = ParquetDatabase(data_dir)
+
+        # Memory optimization components
+        self.memory_monitor = MemoryMonitor(memory_threshold_gb=2.0)
+        self.chunked_processor = ChunkedProcessor(chunk_size=500_000, memory_monitor=self.memory_monitor)
+        self.streaming_handler = StreamingParquetHandler(temp_dir=data_dir / "temp", memory_monitor=self.memory_monitor)
         
     def scan_all_units(self, max_age_hours: float = 1.0, force_refresh: bool = False) -> Dict[str, Any]:
         """Scan all available units and check data freshness.
@@ -255,7 +261,7 @@ class ParquetAutoScanner:
                 preferred_wb = xlsx_path
                 try:
                     if str(plant).upper().startswith("PCMSB"):
-                        pcmsb_wb = Path("excel/PCMSB_Automation.xlsx")
+                        pcmsb_wb = Path("excel/PCMSB/PCMSB_Automation.xlsx")
                         if pcmsb_wb.exists():
                             preferred_wb = pcmsb_wb
                     if str(plant).upper().startswith("ABF"):
@@ -265,13 +271,17 @@ class ParquetAutoScanner:
                 except Exception:
                     pass
                 print(f"  - Building {plant} {unit} from {tags_file.name} using {Path(preferred_wb).name} -> {out_parquet.name}")
+                # PCMSB units need longer timeouts due to PI server response times
+                settle_time = 30.0 if str(plant).upper().startswith("PCMSB") else 1.0
+
                 build_unit_from_tags(
                     xlsx=preferred_wb,
                     tags=[t.strip() for t in tags_file.read_text(encoding="utf-8").splitlines() if t.strip() and not t.strip().startswith('#')],
                     out_parquet=out_parquet,
                     plant=plant,
                     unit=unit,
-                    # use defaults: server/start/end/step/sheet/settle_seconds/visible
+                    settle_seconds=settle_time,
+                    # use defaults for: server/start/end/step/sheet/visible
                 )
                 # Dedup
                 dedup_path = dedup_parquet(out_parquet)
@@ -674,7 +684,7 @@ class ParquetAutoScanner:
             X = pivot_df[feature_cols].ffill().dropna()
             
             if len(X) < 50:
-                results['error'] = f'Insufficient data points for MTD analysis: {len(X)} points (need â‰¥50)'
+                results['error'] = f'Insufficient data points for MTD analysis: {len(X)} points (need ≥50)'
                 return results
             
             # Prefer speed-windowed baseline within recent window if configured
@@ -1033,7 +1043,7 @@ class ParquetAutoScanner:
             X = pivot_df[available_tags].ffill().dropna()
             
             if len(X) < 50:
-                results['error'] = f'Insufficient data points: {len(X)} (need â‰¥50)'
+                results['error'] = f'Insufficient data points: {len(X)} (need ≥50)'
                 return results
             
             # Batch processing parameters
@@ -1357,34 +1367,54 @@ class ParquetAutoScanner:
         # K-units (K-12-01, K-16-01, K-19-01, K-31-01) -> PCFS
         if unit_upper.startswith('K-') and '-' in unit_upper:
             pcfs_paths = [
-                project_root / "excel" / "PCFS_Automation_2.xlsx",
-                project_root / "excel" / "PCFS_Automation.xlsx"
+                project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",  # Working file first
+                project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx"
             ]
             for path in pcfs_paths:
                 if path.exists():
                     return path
 
-        # 07-MT01 units -> ABF
+        # 07-MT01 units -> ABF (now in ABFSB directory)
         elif unit_upper.startswith('07-MT01') or unit_upper.startswith('ABF'):
-            abf_path = project_root / "excel" / "ABF_Automation.xlsx"
-            if abf_path.exists():
-                return abf_path
+            abf_paths = [
+                project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation_Master.xlsx",
+                project_root / "excel" / "ABF_Automation.xlsx",
+                project_root / "excel" / "ABFSB_Automation.xlsx",
+            ]
+            for path in abf_paths:
+                if path.exists():
+                    return path
 
         # PCMSB units -> PCMSB ONLY (no PCFS fallback - different plants!)
         # PCMSB units include: units starting with PCMSB, containing PCMSB, or C-units (C-104, C-201, etc.)
         elif (unit_upper.startswith('PCMSB') or 'PCMSB' in unit_upper or
-              unit_upper.startswith('C-')):
-            pcmsb_path = project_root / "excel" / "PCMSB_Automation.xlsx"
+              unit_upper.startswith('C-') or unit_upper.startswith('XT-')):
+            pcmsb_path = project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx"
             if pcmsb_path.exists():
                 return pcmsb_path
             else:
+                # Attempt auto-recovery from most recent backup/dummy if main file missing
+                pcmsb_dir = project_root / "excel" / "PCMSB"
+                candidates = list(pcmsb_dir.glob("PCMSB_Automation_backup_*.xlsx")) + \
+                              list(pcmsb_dir.glob("PCMSB_Automation_dummy_*.xlsx"))
+                if candidates:
+                    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+                    try:
+                        import shutil
+                        shutil.copy2(str(latest), str(pcmsb_path))
+                        print(f"   Auto-recovered PCMSB workbook from backup: {latest.name} -> {pcmsb_path.name}")
+                        return pcmsb_path
+                    except Exception as _copy_err:
+                        pass
                 raise RuntimeError(f"PCMSB unit '{unit}' requires PCMSB_Automation.xlsx but file not found")
 
         # ABFSB units -> ABFSB (with ABF fallback)
         elif unit_upper.startswith('ABFSB') or 'ABFSB' in unit_upper:
             abfsb_paths = [
-                project_root / "excel" / "ABFSB_Automation.xlsx",
-                project_root / "excel" / "ABF_Automation.xlsx"     # Fallback
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx"     # Fallback
             ]
             for path in abfsb_paths:
                 if path.exists():
@@ -1397,19 +1427,27 @@ class ParquetAutoScanner:
                 plant = unit_data['plant'].iloc[0].upper()
 
                 if plant.startswith("ABF"):
-                    abf_path = project_root / "excel" / "ABF_Automation.xlsx"
-                    if abf_path.exists():
-                        return abf_path
+                    abf_paths = [
+                        project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+                        project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx"
+                    ]
+                    for path in abf_paths:
+                        if path.exists():
+                            return path
                 elif plant.startswith("PCMSB"):
-                    pcmsb_path = project_root / "excel" / "PCMSB_Automation.xlsx"
+                    pcmsb_path = project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx"
                     if pcmsb_path.exists():
                         return pcmsb_path
                     else:
                         raise RuntimeError(f"PCMSB plant requires PCMSB_Automation.xlsx but file not found")
                 elif plant.startswith("PCFS"):
-                    pcfs_path = project_root / "excel" / "PCFS_Automation_2.xlsx"
-                    if pcfs_path.exists():
-                        return pcfs_path
+                    pcfs_paths = [
+                        project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",  # Working file first
+                        project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx"
+                    ]
+                    for path in pcfs_paths:
+                        if path.exists():
+                            return path
         except Exception:
             # Ignore data access errors - rely on pattern matching above
             pass
@@ -1420,11 +1458,14 @@ class ParquetAutoScanner:
 
         # Last resort - find any available Excel file (prioritize PCFS for unknown units)
         excel_paths = [
-            project_root / "excel" / "PCFS_Automation_2.xlsx",  # Most common
-            project_root / "excel" / "PCFS_Automation.xlsx",
-            project_root / "excel" / "ABF_Automation.xlsx",
-            project_root / "excel" / "PCMSB_Automation.xlsx",
-            project_root / "excel" / "ABFSB_Automation.xlsx",
+            project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",  # Working file first
+            project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx",
+            project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+            project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx",
+            project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+            project_root / "excel" / "MLNG" / "MLNG_Automation.xlsx",
+            project_root / "excel" / "PFLNG1" / "PFLNG1_Automation.xlsx",
+            project_root / "excel" / "PFLNG2" / "PFLNG2_Automation.xlsx",
             project_root / "data" / "raw" / "Automation.xlsx",
             project_root / "Automation.xlsx"
         ]
@@ -1445,11 +1486,129 @@ class ParquetAutoScanner:
             return 'PCMSB'
         return 'UNKNOWN'
 
+    def _find_tags_file_for_unit(self, unit: str) -> Optional[Path]:
+        """Locate the appropriate tag file in config/ for a unit.
+
+        Supports:
+        - ABF unit 07-MT01-K001 -> tags_abf_07mt01_k001.txt
+        - PCMSB units C-xxxx / XT-xxxx -> tags_pcmsb_cxxxx.txt / tags_pcmsb_xtxxxx.txt
+        - PCFS K-units (rarely needed here) -> tags_kxx_xx.txt
+        """
+        from .config import Config
+        cfg = Config()
+        cfg_dir = cfg.paths.project_root / 'config'
+
+        u = unit.strip().upper()
+        # ABF mapping
+        if u == '07-MT01-K001' or u.startswith('07-MT01'):
+            candidate = cfg_dir / 'tags_abf_07mt01_k001.txt'
+            return candidate if candidate.exists() else None
+
+        # PCMSB mapping
+        if u.startswith('C-'):
+            key = u.replace('-', '').lower()
+            candidate = cfg_dir / f'tags_pcmsb_{key}.txt'
+            return candidate if candidate.exists() else None
+        if u.startswith('XT-'):
+            key = u.replace('-', '').lower()
+            candidate = cfg_dir / f'tags_pcmsb_{key}.txt'
+            return candidate if candidate.exists() else None
+
+        # PCFS mapping (K-units)
+        if u.startswith('K-'):
+            key = u.replace('-', '_').lower()  # K-16-01 -> k_16_01
+            # Known files in repo use tags_k16_01.txt etc.
+            try:
+                num = u.split('-')[1:]
+                if len(num) >= 2:
+                    candidate = cfg_dir / f"tags_k{num[0]}_{num[1]}.txt"
+                    return candidate if candidate.exists() else None
+            except Exception:
+                pass
+
+        return None
+
+    def _attempt_reseed_and_refresh(self, unit: str, xlsx_path: Path) -> bool:
+        """Try to reseed the workbook's DL_WORK sheet with correct PI tags and refresh.
+
+        Returns True if reseed+refresh appeared to succeed (Excel file exists).
+        """
+        import os
+        # Hard-disable reseed for ABF/07-MT01 units to avoid popups/timeouts
+        u = unit.strip().upper()
+        if u.startswith('07-') or u.startswith('ABF'):
+            return False
+        if os.getenv('DISABLE_RESEED', '0') == '1':
+            # Allow operators to bypass reseed if it causes slowness
+            return False
+        tags_file = self._find_tags_file_for_unit(unit)
+        if not tags_file or not tags_file.exists():
+            return False
+
+        try:
+            # Import seeder lazily to avoid heavy deps when unused
+            from scripts.seed_datalink_formulas import seed_sheet
+            server = "\\\\PTSG-1MMPDPdb01"
+            # Choose a short lookback to avoid long Excel recalcs that can appear 'stuck'
+            # If there is an existing master parquet, start after its last timestamp; else use last 1 day
+            start_arg = "-1d"
+            try:
+                master = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
+                if master.exists():
+                    import pandas as pd
+                    ts = pd.read_parquet(master, columns=['time'])
+                    if not ts.empty:
+                        last_ts = pd.to_datetime(ts['time']).max()
+                        # +1 minute to avoid overlap
+                        start_arg = (last_ts + pd.Timedelta(minutes=1)).strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                pass
+
+            # Run seeding with a hard timeout to avoid getting stuck in Excel/PI DataLink
+            import threading, time as _t
+            seed_ok = {'done': False, 'err': None}
+
+            def _seed_task():
+                try:
+                    seed_sheet(
+                        xlsx_path,
+                        sheet_name="DL_WORK",
+                        tags_file=tags_file,
+                        server=server,
+                        start=start_arg,
+                        end="*",
+                        step="-0.1h",
+                    )
+                    seed_ok['done'] = True
+                except Exception as _e:
+                    seed_ok['err'] = _e
+
+            t = threading.Thread(target=_seed_task, daemon=True)
+            t.start()
+            t.join(timeout=180)  # 3 minutes max for reseed
+            if t.is_alive():
+                print("   WARNING: Reseed timed out after 180s; skipping and using direct tag retrieval")
+                return False
+            if seed_ok['err'] is not None:
+                print(f"   Warning: Reseed failed: {seed_ok['err']}")
+                return False
+
+            # Optional light refresh after seeding to flush formulas
+            try:
+                refresh_excel_safe(xlsx_path, settle_seconds=2)
+            except Exception:
+                pass
+            return xlsx_path.exists()
+        except Exception as _seed_err:
+            print(f"   Warning: Reseed attempt failed: {_seed_err}")
+            return False
+
     def _load_unit_from_tags(self, unit: str, default_xlsx_path: Path, lookback: str = '-2d') -> pd.DataFrame:
         from .config import Config
         from .batch import build_unit_from_tags
         from .clean import dedup_parquet
         import pandas as pd
+        import gc
 
         cfg = Config()
         config_dir = cfg.paths.project_root / 'config'
@@ -1475,24 +1634,142 @@ class ParquetAutoScanner:
             raise RuntimeError(f"No Excel workbook available for {unit}")
 
         plant = self._infer_plant_from_unit(unit)
+
+        # Find the last timestamp in existing master parquet file
+        master = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
+        start_time = None
+
+        if master.exists():
+            try:
+                # Read just the time column to find last timestamp
+                existing_df = pd.read_parquet(master, columns=['time'])
+                if not existing_df.empty:
+                    last_timestamp = pd.to_datetime(existing_df['time']).max()
+                    # Start from last timestamp + 1 minute to avoid overlap
+                    start_time = (last_timestamp + pd.Timedelta(minutes=1)).strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"   Last data in master: {last_timestamp}")
+                    print(f"   Fetching from: {start_time} to current time")
+                else:
+                    print(f"   Master file exists but empty, fetching last 24h")
+                    start_time = '-1d'
+            except Exception as e:
+                print(f"   Error reading master file: {e}, fetching last 24h")
+                start_time = '-1d'
+        else:
+            print(f"   No master file exists, fetching last 24h")
+            start_time = '-1d'
+
         print(f"   Fallback: fetching {len(tags)} tags from PI for {unit} (plant {plant}) using {excel_path.name}...")
-        temp_parquet = self.db.processed_dir / f"{unit}_fallback.parquet"
-        try:
-            build_unit_from_tags(
-                excel_path,
-                tags,
-                temp_parquet,
-                plant=plant,
-                unit=unit,
-                start=lookback,
-                end='*',
-                step='-0.1h',
-                visible=False,
-                settle_seconds=0.5,
-            )
-            df = pd.read_parquet(temp_parquet)
+        print(f"   Time range: {start_time} to current")
+
+        # Use a unique temp parquet to avoid collisions/locks across runs
+        import time as _tmod
+        temp_parquet = self.db.processed_dir / f"{unit}_fallback_{int(_tmod.time())}.parquet"
+        try: # This is the outer try for the entire fallback operation
+            import time
+            import threading
+
+            result_container = {}
+            def target():
+                try:
+                    # Allow unit/plant-specific server override via env
+                    import os as _os_env
+                    server_override = None
+                    if plant.upper().startswith('ABF'):
+                        server_override = _os_env.getenv('ABF_PI_SERVER')
+                    elif plant.upper().startswith('PCMSB'):
+                        server_override = _os_env.getenv('PCMSB_PI_SERVER')
+                    elif plant.upper().startswith('PCFS'):
+                        server_override = _os_env.getenv('PCFS_PI_SERVER')
+
+                    build_unit_from_tags(
+                        excel_path,
+                        tags,
+                        temp_parquet,
+                        plant=plant,
+                        unit=unit,
+                        server=(server_override or "\\\\PTSG-1MMPDPdb01"),
+                        start=start_time,
+                        end='*',
+                        step='-0.1h',
+                        visible=False,
+                        settle_seconds=0.5,
+                    )
+                    result_container['success'] = True
+                except Exception as e:
+                    result_container['error'] = e
+
+            try:
+                thread = threading.Thread(target=target)
+                thread.start()
+                fetch_start = time.time()
+                thread.join(timeout=300) # 5-minute timeout
+
+                if thread.is_alive():
+                    raise TimeoutError("Fallback tag retrieval timed out after 300 seconds")
+                if 'error' in result_container:
+                    raise result_container['error']
+
+                # Read the parquet file if the thread was successful (with robust retry)
+                import shutil, os
+                df = pd.DataFrame()
+                if temp_parquet.exists():
+                    read_ok = False
+                    last_err = None
+                    # Try direct read several times in case another process still has a handle
+                    for _ in range(10):
+                        try:
+                            df = pd.read_parquet(temp_parquet)
+                            read_ok = True
+                            break
+                        except Exception as e:
+                            last_err = e
+                            _tmod.sleep(0.5)
+                    if not read_ok:
+                        # Try copying to a new path then reading
+                        try:
+                            copy_path = temp_parquet.with_suffix('.read.parquet')
+                            shutil.copy2(str(temp_parquet), str(copy_path))
+                            df = pd.read_parquet(copy_path)
+                            try:
+                                copy_path.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            read_ok = True
+                        except Exception as e:
+                            last_err = e
+                    if not read_ok:
+                        raise last_err if last_err else RuntimeError("Unable to read fallback parquet")
+                elif 'df' not in locals():
+                    df = pd.DataFrame()
+
+            except Exception as e:
+                # Handle any errors from the threading operation
+                if isinstance(e, TimeoutError):
+                    raise e
+                else:
+                    print(f"   WARNING: Threading operation failed: {e}")
+                    df = pd.DataFrame()
+
+        except TimeoutError as e:
+            print(f"   WARNING: {e}")
+            # Create minimal fallback data to prevent complete failure
+            df = pd.DataFrame({
+                'plant': [plant],
+                'unit': [unit],
+                'tag': [f'{plant}_{unit}_FALLBACK_TAG'], # Corrected f-string
+                'time': [pd.Timestamp.now()],
+                'value': [0.0]
+            })
+        except Exception as e:
+            # Catch exceptions from the thread
+            print(f"   WARNING: Fallback thread failed: {e}")
+            df = pd.DataFrame()
         finally:
-            temp_parquet.unlink(missing_ok=True)
+            try:
+                temp_parquet.unlink(missing_ok=True) # Ensure temp file is always cleaned up
+            except Exception:
+                pass
 
         if df.empty:
             raise RuntimeError(f"Tag fallback produced no data for {unit}")
@@ -1503,16 +1780,130 @@ class ParquetAutoScanner:
         master = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
         if master.exists():
             try:
-                existing = pd.read_parquet(master)
-                existing['time'] = pd.to_datetime(existing['time'])
-                df = pd.concat([existing, df], ignore_index=True)
-                df = df.sort_values('time').drop_duplicates(subset=['time', 'tag'], keep='last').reset_index(drop=True)
-            except Exception:
+                # Memory-efficient merge for large datasets
+                logger.info(f"Merging with existing data for unit {unit}")
+                self.memory_monitor.log_memory_status("before merge")
+
+                # Check existing file size first
+                existing_size_mb = master.stat().st_size / (1024**2)
+                new_df_mb = df.memory_usage(deep=True).sum() / (1024**2)
+
+                if existing_size_mb > 100 or new_df_mb > 100 or self.memory_monitor.check_memory_pressure():
+                    # Use streaming merge for large files
+                    logger.info(f"Using streaming merge for large dataset: {existing_size_mb:.1f}MB existing + {new_df_mb:.1f}MB new")
+                    existing = pd.read_parquet(master, columns=['time'])  # Only read time column initially
+                    existing_full = pd.read_parquet(master)  # Read full data
+                    existing_full['time'] = pd.to_datetime(existing_full['time'])
+
+                    # Use streaming handler for merge
+                    df = self.streaming_handler.merge_large_dataframes(existing_full, df, ['time', 'tag'])
+
+                    # Cleanup
+                    del existing, existing_full
+                    self.memory_monitor.force_garbage_collection()
+                else:
+                    # Standard merge for smaller datasets
+                    existing = pd.read_parquet(master)
+                    existing['time'] = pd.to_datetime(existing['time'])
+                    df = pd.concat([existing, df], ignore_index=True)
+                    del existing
+
+                # Memory-efficient deduplication
+                df = memory_efficient_dedup(df, subset=['time', 'tag'])
+                df = df.sort_values('time').reset_index(drop=True)
+
+                self.memory_monitor.log_memory_status("after merge")
+
+            except MemoryError as e:
+                logger.error(f"Memory error during merge for unit {unit}: {e}")
+                logger.info("Attempting incremental processing fallback")
+                # Fallback: process in smaller chunks
+                try:
+                    df = self._fallback_incremental_merge(master, df, unit)
+                except Exception as fallback_e:
+                    logger.error(f"Fallback merge also failed for unit {unit}: {fallback_e}")
+                    raise MemoryError(f"Unable to merge data for unit {unit} due to memory constraints")
+            except Exception as e:
+                logger.error(f"Error during merge for unit {unit}: {e}")
                 pass
 
-        df.to_parquet(master, index=False)
-        dedup_parquet(master)
+        # Atomic write of master parquet
+        from .ingest import write_parquet
+        write_parquet(df, master)
+        # Optional: defer dedup to end-of-run for speed
+        import os as _os
+        if _os.getenv('DELAY_DEDUP', '').strip().lower() in ('1','true','yes','y') or \
+           _os.getenv('DEDUP_MODE', '').strip().lower() in ('end','deferred','once'):
+            # Caller may handle a final dedup sweep
+            pass
+        else:
+            dedup_parquet(master)
         return df
+
+    def _fallback_incremental_merge(self, master_file: Path, new_df: pd.DataFrame, unit: str) -> pd.DataFrame:
+        """Incremental merge fallback for memory-constrained environments.
+
+        Args:
+            master_file: Path to existing parquet file
+            new_df: New DataFrame to merge
+            unit: Unit identifier
+
+        Returns:
+            Merged DataFrame using incremental processing
+        """
+        logger.info(f"Using incremental merge fallback for unit {unit}")
+
+        try:
+            # Read existing data in chunks to find overlap period
+            temp_files = []
+            chunk_processor = ChunkedProcessor(chunk_size=100_000, memory_monitor=self.memory_monitor)
+
+            # Find the time range of new data
+            new_df['time'] = pd.to_datetime(new_df['time'])
+            new_start = new_df['time'].min()
+            new_end = new_df['time'].max()
+
+            logger.info(f"New data range: {new_start} to {new_end}")
+
+            # Process existing data in chunks, filtering out overlapping period
+            filtered_chunks = []
+            for chunk in chunk_processor.read_parquet_chunked(master_file):
+                chunk['time'] = pd.to_datetime(chunk['time'])
+
+                # Keep data outside the new data time range
+                before_new = chunk[chunk['time'] < new_start]
+                after_new = chunk[chunk['time'] > new_end]
+
+                if not before_new.empty:
+                    filtered_chunks.append(before_new)
+                if not after_new.empty:
+                    filtered_chunks.append(after_new)
+
+                # Memory management
+                del chunk, before_new, after_new
+                if len(filtered_chunks) % 10 == 0:
+                    self.memory_monitor.force_garbage_collection()
+
+            # Combine filtered existing data with new data
+            all_chunks = filtered_chunks + [new_df]
+
+            if all_chunks:
+                result = pd.concat(all_chunks, ignore_index=True)
+                result = result.sort_values('time').reset_index(drop=True)
+
+                # Final deduplication
+                result = memory_efficient_dedup(result, subset=['time', 'tag'])
+
+                logger.info(f"Incremental merge completed for unit {unit}: {len(result):,} total records")
+                return result
+
+            return new_df
+
+        except Exception as e:
+            logger.error(f"Incremental merge fallback failed for unit {unit}: {e}")
+            # Last resort: return just the new data
+            logger.warning(f"Returning only new data for unit {unit} due to merge failure")
+            return new_df
 
     def refresh_stale_units_with_progress(self, xlsx_path: Path = None, max_age_hours: float = 8.0) -> Dict[str, Any]:
         """Refresh stale units with real-time progress tracking.
@@ -1562,12 +1953,16 @@ class ParquetAutoScanner:
                 "units_processed": []
             }
         
-        # Ensure Excel file is available
+        # Excel path may be None here; that's OK because we resolve the correct
+        # workbook per-unit in _get_excel_file_for_unit(). Historically we bailed
+        # out if no default workbook was found, which prevented any units from
+        # being processed when files lived under plant subfolders (e.g.,
+        # excel/PCMSB/PCMSB_Automation.xlsx). Proceed and resolve per unit.
         if xlsx_path is None:
-            return {
-                "success": False,
-                "error": "No Excel file found for refresh"
-            }
+            try:
+                print("Note: No default Excel workbook found; resolving per-unit workbooks.")
+            except Exception:
+                pass
         
         print(f"\\nREFRESHING {len(stale_units)} STALE UNITS")
         print(f"Excel file: {xlsx_path}")
@@ -1587,6 +1982,12 @@ class ParquetAutoScanner:
         
         # Track refreshed Excel files to avoid multiple refreshes
         refreshed_excel_files = set()
+
+        # Toggle to delay dedup until the end for speed
+        import os as _os
+        _delay_dedup = _os.getenv('DELAY_DEDUP', '').strip().lower() in ('1','true','yes','y') or \
+                       _os.getenv('DEDUP_MODE', '').strip().lower() in ('end','deferred','once')
+        pending_dedup: list[Path] = []
 
         # Process each unit with progress display
         for i, unit in enumerate(stale_units):
@@ -1609,49 +2010,142 @@ class ParquetAutoScanner:
                 # Perform Excel refresh (only once per Excel file)
                 if str(unit_xlsx_path) not in refreshed_excel_files:
                     print(f"   Refreshing {unit_xlsx_path.name} with PI DataLink...")
-                    excel_start = time.time()
-                    refresh_excel_safe(unit_xlsx_path)
-                    excel_time = time.time() - excel_start
-                    print(f"   Excel refresh completed in {excel_time:.1f}s")
-                    refreshed_excel_files.add(str(unit_xlsx_path))
+                    try:
+                        excel_start = time.time()
+                        refresh_excel_safe(unit_xlsx_path)
+                        excel_time = time.time() - excel_start
+                        print(f"   Excel refresh completed in {excel_time:.1f}s")
+                        refreshed_excel_files.add(str(unit_xlsx_path))
+                    except Exception as refresh_error:
+                        print(f"   WARNING: Excel refresh failed: {refresh_error}")
+                        # Continue with potentially stale data, but log the warning
                 else:
-                    print(f"   Using data from previous {unit_xlsx_path.name} refresh")
+                    print(f"   Using cached data from previous {unit_xlsx_path.name} refresh")
 
                 # Process unit data
                 print(f"   Processing data for {unit}...")
                 from .ingest import load_latest_frame, write_parquet
 
                 # Load fresh data using the correct Excel file and unit-specific sheet
-                # Determine correct sheet name for the unit
-                if unit.startswith('K-'):
-                    # PCFS units use DL_K pattern (e.g., K-31-01 -> DL_K_31_01)
-                    sheet_name = f"DL_{unit.replace('-', '_')}"
-                elif unit.startswith('C-'):
-                    # PCMSB units use DL_C pattern (e.g., C-104 -> DL_C_104)
-                    sheet_name = f"DL_{unit.replace('-', '_')}"
-                else:
-                    # Default to first sheet for other units
-                    sheet_name = None
+                # Determine correct sheet name for the unit with plant-specific patterns
+                def _sheet_for_unit(u: str) -> str | None:
+                    u = u.strip()
+                    if u.startswith('K-'):
+                        # PCFS units (K-) all use DL_WORK sheet (contains time-value pairs without headers)
+                        return 'DL_WORK'
+                    if u.startswith('C-'):
+                        # PCMSB units (C-) use DL_WORK sheet (shared sheet for all PCMSB units)
+                        return 'DL_WORK'
+                    if u.startswith('XT-'):
+                        # XT units also use DL_WORK sheet when part of PCMSB plant
+                        return 'DL_WORK'
+                    return None
+
+                expected_sheet = _sheet_for_unit(unit)
+                sheet_name = expected_sheet
 
                 # Verify sheet exists before using it
                 import pandas as pd
                 try:
                     excel_file = pd.ExcelFile(unit_xlsx_path)
                     available_sheets = excel_file.sheet_names
-                    if sheet_name and sheet_name not in available_sheets:
-                        print(f"   WARNING: Sheet '{sheet_name}' not found in {unit_xlsx_path.name}")
-                        print(f"   Available sheets: {available_sheets}")
-                        print(f"   Falling back to first sheet: {available_sheets[0] if available_sheets else 'None'}")
-                        sheet_name = available_sheets[0] if available_sheets else None
+                    excel_ok = True
+                    if sheet_name is None:
+                        # If PCMSB/XT and DL_WORK exists, prefer it (this workbook uses DL_WORK as output)
+                        if (unit.startswith('C-') or unit.startswith('XT-')) and 'DL_WORK' in available_sheets:
+                            sheet_name = 'DL_WORK'
+                            print(f"   Using sheet (PCMSB default): {sheet_name}")
+                        # Else, choose a sensible default: prefer 'Sheet1' if present; else any non-WORK sheet
+                        elif 'Sheet1' in available_sheets:
+                            sheet_name = 'Sheet1'
+                            print(f"   Using sheet (default): {sheet_name}")
+                        else:
+                            non_work = [s for s in available_sheets if 'WORK' not in s.upper()]
+                            if non_work:
+                                sheet_name = non_work[0]
+                                print(f"   Using sheet (heuristic): {sheet_name}")
+                            else:
+                                # Fall back to first sheet if all else fails
+                                sheet_name = available_sheets[0] if available_sheets else None
+                                print(f"   Using first available sheet: {sheet_name}")
+                        # Keep Excel ingestion enabled by default; tag fallback will be used if parsing yields empty
+                    elif sheet_name and sheet_name not in available_sheets:
+                        # Prefer exact family prefix match (DL_C, DL_K, DL_XT)
+                        pref = None
+                        for pfx in ('DL_C', 'DL_K', 'DL_XT'):
+                            if sheet_name.upper().startswith(pfx):
+                                pref = pfx
+                                break
+                        candidates = []
+                        if pref:
+                            candidates = [s for s in available_sheets if s.upper().startswith(pref)]
+                            # Prefer candidate that contains the unit signature (numbers)
+                            sig = None
+                            if unit.startswith('K-'):
+                                sig = unit[2:].replace('-', '_')  # e.g., 31_01
+                            elif unit.startswith('C-'):
+                                sig = unit[2:].replace('-', '')  # e.g., 02001 or 104
+                            elif unit.startswith('XT-'):
+                                sig = unit[3:].replace('-', '')  # e.g., 07002
+                            if sig:
+                                sig_upper = sig.upper()
+                                with_sig = [s for s in candidates if sig_upper in s.upper()]
+                                if with_sig:
+                                    candidates = with_sig
+                        if candidates:
+                            # Prefer non-WORK candidate if multiple
+                            non_work = [s for s in candidates if 'WORK' not in s.upper()]
+                            sheet_name = (non_work[0] if non_work else candidates[0])
+                            print(f"   Using sheet (soft prefix match): {sheet_name}")
+                        else:
+                            print(f"   WARNING: Sheet '{sheet_name}' not found in {unit_xlsx_path.name}")
+                            print(f"   Available sheets: {available_sheets}")
+                            print(f"   Falling back to first sheet: {available_sheets[0] if available_sheets else 'None'}")
+                        if (unit.startswith('C-') or unit.startswith('XT-')) and 'DL_WORK' in available_sheets:
+                            sheet_name = 'DL_WORK'
+                            print(f"   Using sheet (PCMSB fallback): {sheet_name}")
+                        else:
+                            sheet_name = available_sheets[0] if available_sheets else None
+                        # Keep Excel ingestion enabled; if parsing yields no data we will fallback to tags
                     elif sheet_name:
                         print(f"   Using sheet: {sheet_name}")
                 except Exception as e:
                     print(f"   Warning: Error checking sheets in {unit_xlsx_path.name}: {e}")
                     sheet_name = None
+                    excel_ok = False
 
-                df = load_latest_frame(unit_xlsx_path, unit=unit, sheet_name=sheet_name)
-                if df.empty:
-                    print(f"   WARNING: Excel returned no data for {unit}; switching to direct tag retrieval...")
+                df = None
+                if excel_ok:
+                    df = load_latest_frame(unit_xlsx_path, unit=unit, sheet_name=sheet_name)
+                if df is None or df.empty:
+                    # Try to auto-reseed PI DataLink formulas from the corresponding tag list
+                    print(f"   WARNING: Excel returned no data for {unit}; attempting to re-seed DL_WORK and refresh...")
+                    reseeded = self._attempt_reseed_and_refresh(unit, unit_xlsx_path)
+                    if reseeded:
+                        try:
+                            df = load_latest_frame(unit_xlsx_path, unit=unit, sheet_name=sheet_name)
+                        except Exception:
+                            df = pd.DataFrame()
+
+                # Freshness sanity check: if Excel data isn't newer than master, fallback to direct tag retrieval
+                try:
+                    before_latest = before_info.get('latest_timestamp')
+                    df_latest = None
+                    if df is not None and not df.empty and 'time' in df.columns:
+                        df_latest = pd.to_datetime(df['time']).max()
+                    if (df is None) or df.empty or (before_latest is not None and df_latest is not None and df_latest <= before_latest):
+                        if df is None or df.empty:
+                            print(f"   WARNING: Excel still produced no data for {unit}; switching to direct tag retrieval...")
+                        else:
+                            print(f"   WARNING: Excel data not newer (excel latest: {df_latest}, master latest: {before_latest}); switching to direct tag retrieval...")
+                        df = self._load_unit_from_tags(unit, unit_xlsx_path)
+                except Exception:
+                    # On any error, fall back to direct tag retrieval
+                    print(f"   WARNING: Freshness check failed; switching to direct tag retrieval for {unit}...")
+                    df = self._load_unit_from_tags(unit, unit_xlsx_path)
+
+                if df is None or df.empty:
+                    print(f"   WARNING: Excel still produced no data for {unit}; switching to direct tag retrieval...")
                     df = self._load_unit_from_tags(unit, unit_xlsx_path)
 
                 # Merge fresh data with existing historical data
@@ -1682,10 +2176,18 @@ class ParquetAutoScanner:
                     if 'time' in df.columns:
                         df['time'] = pd.to_datetime(df['time'])
                     
-                    # Combine and remove duplicates by time
+                    # Combine and remove duplicates by time+tag (preserve multi-tag rows)
                     combined_df = pd.concat([existing_df, df], ignore_index=True)
                     if 'time' in combined_df.columns:
-                        combined_df = combined_df.drop_duplicates(subset=['time']).sort_values('time').reset_index(drop=True)
+                        # Only use 'tag' in keys if both pieces carry it; else dedup by time
+                        use_tag = ('tag' in existing_df.columns) and ('tag' in df.columns)
+                        dedup_keys = ['time', 'tag'] if use_tag else ['time']
+                        combined_df = (
+                            combined_df
+                            .drop_duplicates(subset=dedup_keys, keep='last')
+                            .sort_values('time')
+                            .reset_index(drop=True)
+                        )
                     
                     print(f"   Combined records: {len(combined_df):,}")
                 else:
@@ -1717,9 +2219,13 @@ class ParquetAutoScanner:
                 output_path = write_parquet(combined_df, parquet_path)
                 print(f"   Updated master: {parquet_path.name}")
 
-                # Regenerate deduplicated view so freshness checks see new data
-                dedup_path = dedup_parquet(parquet_path)
-                print(f"   Updated dedup: {dedup_path.name}")
+                # Regenerate deduplicated view
+                if _delay_dedup:
+                    pending_dedup.append(parquet_path)
+                    print(f"   Queued dedup for end-of-run: {parquet_path.name}")
+                else:
+                    dedup_path = dedup_parquet(parquet_path)
+                    print(f"   Updated dedup: {dedup_path.name}")
 
                 # Update df for metrics reporting
                 df = combined_df
@@ -1749,7 +2255,10 @@ class ParquetAutoScanner:
                 print(f"   {unit} completed in {unit_time:.1f}s")
                 print(f"   Records: {before_info['total_records']:,} -> {len(df):,}")
                 print(f"   Output: {unit_result['file_size_mb']:.1f}MB")
-                print(f"   Age: {before_info['data_age_hours']:.1f}h -> Fresh")
+                if after_info['is_stale']:
+                    print(f"   Age: {before_info['data_age_hours']:.1f}h -> still stale ({after_info['data_age_hours']:.1f}h)")
+                else:
+                    print(f"   Age: {before_info['data_age_hours']:.1f}h -> Fresh ({after_info['data_age_hours']:.1f}h)")
                 
                 # Show overall progress
                 completed = len(results["units_processed"])
@@ -1775,6 +2284,26 @@ class ParquetAutoScanner:
                 print(f"   {unit} FAILED after {unit_time:.1f}s")
                 print(f"   Error: {error_msg}")
         
+        # End-of-run dedup pass (optional for speed)
+        if pending_dedup:
+            print("\nRunning end-of-run dedup pass...")
+            unique_paths = []
+            seen = set()
+            for p in pending_dedup:
+                if str(p) not in seen:
+                    seen.add(str(p))
+                    unique_paths.append(p)
+            completed = 0
+            for p in unique_paths:
+                try:
+                    dp = dedup_parquet(p)
+                    print(f"   Deduped: {dp.name}")
+                    completed += 1
+                except Exception as e:
+                    print(f"   WARNING: Dedup failed for {p.name}: {e}")
+            results['dedup_deferred'] = len(unique_paths)
+            results['dedup_completed'] = completed
+
         # Final summary
         refresh_end = datetime.now()
         total_time = (refresh_end - refresh_start).total_seconds()
@@ -1800,9 +2329,3 @@ class ParquetAutoScanner:
             print(f"Fresh units: {', '.join(results['fresh_after_refresh'])}")
         
         return results
-
-
-
-
-
-

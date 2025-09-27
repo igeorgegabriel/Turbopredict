@@ -177,19 +177,22 @@ class TurbopredictSystem:
                 # Real data options (always shown)
                 menu_options = [
                     ("1", "AUTO-REFRESH SCAN", "Auto-update stale data (no prompt)"),
-                    ("2", "UNIT DEEP ANALYSIS", "Analyze specific unit with real data"),
+                    ("2", "UNIT DEEP ANALYSIS", "Smart anomaly detection with auto-triggered plots"),
                     ("3", "HOURLY AUTO LOOP", "Every hour: [1] then [2], until Ctrl+C"),
                     ("4", "AUTO-SCAN SYSTEM", "Intelligent freshness-based scanning"),
                     ("5", "DATA QUALITY AUDIT", "Comprehensive quality analysis"),
                     ("6", "UNIT EXPLORER", "Browse and explore all units"),
                     ("7", "ORIGINAL CLI", "Access original command interface"),
                     ("8", "SYSTEM DIAGNOSTICS", "Neural matrix health check"),
+                    ("9", "CONDITIONAL PLOTTING", "Smart plots: only if data + minimal change marks"),
+                    ("A", "TAG STATE DASHBOARD", "Comprehensive tag health monitoring"),
+                    ("B", "INCIDENT REPORTER", "WHO-WHAT-WHEN-WHERE detailed reports"),
                     ("0", "NEURAL DISCONNECT", "Terminate all connections")
                 ]
                 
                 for cmd, system, desc in menu_options:
                     # Mark unavailable options if no data
-                    if not self.data_available and cmd in ["1", "2", "3", "4", "5", "6"]:
+                    if not self.data_available and cmd in ["1", "2", "3", "4", "5", "6", "9", "A", "B"]:
                         menu_table.add_row(cmd, f"[dim]{system}[/]", f"[dim red]{desc} (DATA OFFLINE)[/]")
                     else:
                         menu_table.add_row(cmd, system, desc)
@@ -207,7 +210,7 @@ class TurbopredictSystem:
                 
                 choice = Prompt.ask(
                     "[bold magenta]>>> SELECT NEURAL PATHWAY[/]",
-                    choices=["0","1","2","3","4","5","6","7","8"],
+                    choices=["0","1","2","3","4","5","6","7","8","9","A","B"],
                     default="3" if self.data_available else "7",
                     console=self.console
                 )
@@ -226,13 +229,25 @@ class TurbopredictSystem:
 |         TURBOPREDICT X PROTEAN NEURAL COMMAND MATRIX          |
 +================================================================+
 | 1. AUTO-REFRESH SCAN    - Auto-update stale data (no prompt) |
-| 2. UNIT DEEP ANALYSIS   - Analyze specific unit data         |
+| 2. UNIT DEEP ANALYSIS   - Smart anomaly detection + plots    |
 | 3. HOURLY AUTO LOOP     - Every hour: [1] then [2]           |
 | 4. AUTO-SCAN SYSTEM     - Intelligent scanning system        |
 | 5. DATA QUALITY AUDIT   - Quality analysis reports           |
 | 6. UNIT EXPLORER        - Browse all available units         |
 | 7. ORIGINAL CLI         - Access original command interface   |
 | 8. SYSTEM DIAGNOSTICS   - System health check                |
++----------------------------------------------------------------+
+| ENHANCED ANALYSIS SUITE                                       |
++----------------------------------------------------------------+
+| 9. CONDITIONAL PLOTTING - Smart plots + minimal change marks |
+| A. TAG STATE DASHBOARD  - Comprehensive tag health monitor   |
+| B. INCIDENT REPORTER    - WHO-WHAT-WHEN-WHERE reports        |
++----------------------------------------------------------------+
+| ANOMALY DIAGNOSTIC PLOTS                                      |
++----------------------------------------------------------------+
+| C. AUTO-PLOT STATUS     - Show anomaly-triggered plot status  |
+| D. CLEANUP REPORTS      - Clean old reports and reclaim space|
++================================================================+
 | 0. NEURAL DISCONNECT    - Exit system                        |
 +================================================================+
         """
@@ -285,10 +300,25 @@ class TurbopredictSystem:
             
         elif choice == "8":
             self.run_system_diagnostics()
-            
+
+        elif choice == "9":
+            self.run_conditional_plotting()
+
+        elif choice.upper() == "A":
+            self.run_tag_state_dashboard()
+
+        elif choice.upper() == "B":
+            self.run_incident_reporter()
+
+        elif choice.upper() == "C":
+            self.run_controlled_plots()
+
+        elif choice.upper() == "D":
+            self.cleanup_reports()
+
         else:
             self._show_invalid_choice()
-        
+
         return True
     
     def run_real_data_scanner(self, auto_refresh=False):
@@ -515,15 +545,29 @@ class TurbopredictSystem:
             
             # Look for Excel automation workbooks (supporting all plants)
             project_root = Path(__file__).parent
+            # Expanded search: include plant subfolders and master files
             excel_candidates = [
+                # Root-level common names
                 project_root / "excel" / "ABF_Automation.xlsx",
                 project_root / "excel" / "ABFSB_Automation.xlsx",
                 project_root / "excel" / "PCFS_Automation_2.xlsx",
                 project_root / "excel" / "PCFS_Automation.xlsx",
                 project_root / "excel" / "PCMSB_Automation.xlsx",
+                # Plant subfolders
+                project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation_Master.xlsx",
+                project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx",
+                project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",
+                project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx",
+                # Generic fallbacks
                 project_root / "data" / "raw" / "Automation.xlsx",
                 project_root / "Automation.xlsx",
             ]
+            # Last resort: glob any Automation*.xlsx under excel/
+            if not any(p.exists() for p in excel_candidates):
+                for path in (project_root / "excel").rglob("*Automation*.xlsx"):
+                    excel_candidates.append(path)
             main_excel = next((path for path in excel_candidates if path.exists()), None)
 
             if main_excel is None:
@@ -1410,17 +1454,20 @@ class TurbopredictSystem:
                 
                 all_analyses = {}
                 for i, unit in enumerate(units):
-                    print(f"[{i+1}/{len(units)}] Analyzing {unit}...")
+                    print(f"[{i+1}/{len(units)}] Smart anomaly scanning {unit}...")
+                    # Use enhanced anomaly detection pipeline for Option [2]
                     analysis = self.scanner.analyze_unit_data(unit, run_anomaly_detection=True)
                     all_analyses[unit] = analysis
-                    # Emit a concise status line for consistency across units
+                    # Show enhanced detection status
                     an = analysis.get('anomalies', {}) if isinstance(analysis, dict) else {}
                     method = an.get('method', 'unknown')
                     total = an.get('total_anomalies', 0)
                     rate = an.get('anomaly_rate', 0.0)
-                    if method == 'mtd_with_isolation_forest_fallback':
+                    if method in ('hybrid_anomaly_detection', 'smart_enhanced'):
+                        print(f"  -> Enhanced Pipeline: anomalies={total} ({rate*100:.2f}%)")
+                    elif method == 'mtd_with_isolation_forest_fallback':
                         print(f"  -> Fallback: MTD/IF, anomalies={total} ({rate*100:.2f}%)")
-                    elif method in ('mahalanobis_taguchi_distance','baseline_tuned','smart_enhanced'):
+                    elif method in ('mahalanobis_taguchi_distance','baseline_tuned'):
                         print(f"  -> {method}: anomalies={total} ({rate*100:.2f}%)")
                     else:
                         print(f"  -> Detection: {method}, anomalies={total} ({rate*100:.2f}%)")
@@ -1435,61 +1482,103 @@ class TurbopredictSystem:
             self._show_error(f"Analysis failed: {e}")
 
     def _generate_enhanced_option2_plots(self, all_analyses: dict):
-        """Generate enhanced plots (2.5σ + AE candidates, MTD/IF confirmations) for Option [2].
+        """Generate anomaly-triggered plots for Option [2] using smart detection pipeline.
 
-        Uses the overlay-capable helpers in enhanced_plot_anomalies.py. This produces
-        per-unit output under reports/enhanced_option2_<timestamp>/.
+        Only generates 3-month historical plots when verified anomalies are detected
+        by the detection pipeline: 2.5-sigma + Autoencoder -> MTD + Isolation Forest
         """
         from datetime import datetime, timedelta
-        import importlib
         import pandas as pd
-        try:
-            ep = importlib.import_module('enhanced_plot_anomalies')
-        except Exception as ex:
-            raise RuntimeError(f"enhanced_plot_anomalies not importable: {ex}")
+        from pi_monitor.smart_anomaly_detection import smart_anomaly_detection
+        from pi_monitor.anomaly_triggered_plots import generate_anomaly_plots
 
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        base_dir = (Path(__file__).parent / 'reports' / f'enhanced_option2_{ts}')
-        base_dir.mkdir(parents=True, exist_ok=True)
+        print("\n>>> ANOMALY-TRIGGERED PLOTTING SYSTEM <<<")
+        print("Only generating plots for verified anomalous tags")
+        print("Detection Pipeline: 2.5-Sigma + Autoencoder -> MTD + Isolation Forest")
 
-        cutoff = datetime.now() - timedelta(days=90)
+        # Collect all detection results for anomaly plotting
+        detection_results = {}
+        verified_anomalies_found = 0
+
+        cutoff = datetime.now() - timedelta(days=90)  # 3-month analysis window
 
         units = list(all_analyses.keys())
         for unit in units:
-            analysis = all_analyses[unit] or {}
-            anomalies = analysis.get('anomalies', {}) if isinstance(analysis, dict) else {}
-            # Provide details to plotting module (used by overlay markers)
-            try:
-                setattr(ep, '_last_anomaly_details', anomalies.get('details', {}))
-            except Exception:
-                pass
+            print(f"\n[ANOMALY SCAN] {unit}:")
 
-            # Load and trim data for recent window
+            # Load unit data for anomaly detection
             df = self.db.get_unit_data(unit)
             if df.empty:
+                print(f"  No data available for {unit}")
                 continue
+
             try:
+                # Filter to analysis window
                 df['time'] = pd.to_datetime(df['time'])
                 df_recent = df[df['time'] >= cutoff].copy()
-            except Exception:
-                df_recent = df.copy()
 
-            unit_dir = base_dir / unit
-            unit_dir.mkdir(parents=True, exist_ok=True)
+                if df_recent.empty:
+                    print(f"  No data in 3-month analysis window")
+                    continue
 
-            by_tag = anomalies.get('by_tag', {})
-            if not by_tag:
+                # Run smart anomaly detection with auto-plotting enabled
+                results = smart_anomaly_detection(df_recent, unit, auto_plot_anomalies=False)
+
+                # Store results for batch plotting
+                detection_results[unit] = results
+
+                # Report status
+                unit_status = results.get('unit_status', {})
+                total_anomalies = results.get('total_anomalies', 0)
+                by_tag = results.get('by_tag', {})
+
+                print(f"  Status: {unit_status.get('status', 'UNKNOWN')}")
+                print(f"  Total anomalies: {total_anomalies:,}")
+                print(f"  Problematic tags: {len(by_tag)}")
+
+                # Count verified anomalies
+                unit_verified = 0
+                for tag, tag_info in by_tag.items():
+                    sigma_count = tag_info.get('sigma_2_5_count', 0)
+                    ae_count = tag_info.get('autoencoder_count', 0)
+                    mtd_count = tag_info.get('mtd_count', 0)
+                    iso_count = tag_info.get('isolation_forest_count', 0)
+                    confidence = tag_info.get('confidence', 'LOW')
+
+                    # Check verification criteria
+                    primary_detected = sigma_count > 0 or ae_count > 0
+                    verification_detected = mtd_count > 0 or iso_count > 0
+                    high_confidence = confidence in ['HIGH', 'MEDIUM']
+
+                    if primary_detected and verification_detected and high_confidence:
+                        unit_verified += 1
+
+                verified_anomalies_found += unit_verified
+                print(f"  Verified anomalies: {unit_verified}")
+
+            except Exception as e:
+                print(f"  ERROR in anomaly detection: {e}")
                 continue
-            top = sorted(by_tag.items(), key=lambda x: x[1].get('count', 0), reverse=True)[:10]
-            for tag, tag_info in top:
-                # Reuse helper to draw plot with overlays
-                ep.create_enhanced_tag_plot(unit, tag, tag_info, df_recent, unit_dir)
 
-        # Optionally create a light overview once all units are processed
-        try:
-            ep.create_main_overview(base_dir, units)
-        except Exception:
-            pass
+        # Generate plots only if verified anomalies are found
+        if verified_anomalies_found > 0:
+            print(f"\n>>> GENERATING ANOMALY DIAGNOSTIC PLOTS <<<")
+            print(f"Found {verified_anomalies_found} verified anomalies across {len(detection_results)} units")
+
+            try:
+                # Generate anomaly-triggered plots
+                plot_session_dir = generate_anomaly_plots(detection_results)
+
+                print(f"\n>>> ANOMALY DIAGNOSTIC PLOTS COMPLETED <<<")
+                print(f"Location: {plot_session_dir}")
+                print(f"Only verified anomalous tags have been plotted")
+
+            except Exception as e:
+                print(f"ERROR in plot generation: {e}")
+        else:
+            print(f"\n>>> NO VERIFIED ANOMALIES DETECTED <<<")
+            print("All monitored tags are operating within normal parameters")
+            print("No diagnostic plots generated")
     
     def show_database_overview(self):
         """Show complete database overview"""
@@ -1663,7 +1752,186 @@ class TurbopredictSystem:
                 print(f"{name:<20} {status_text:<12} {details:<35}")
         
         print("+" + "=" * 70 + "+")
-    
+
+    def run_conditional_plotting(self):
+        """Run conditional plotting with minimal change detection"""
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> LAUNCHING CONDITIONAL PLOTTING SYSTEM <<<" + Style.RESET_ALL)
+            else:
+                print(">>> LAUNCHING CONDITIONAL PLOTTING SYSTEM <<<")
+
+            # Import the conditional plotting module
+            import importlib
+            try:
+                conditional_plot = importlib.import_module('enhanced_plot_conditional')
+
+                # Get available units
+                units = self.db.get_all_units()
+
+                if not units:
+                    print("No units available for plotting")
+                    return
+
+                # Ask user for change threshold
+                print(f"\nAvailable units: {', '.join(units)}")
+                try:
+                    threshold = input("Enter minimal change threshold % (default 0.5): ").strip()
+                    if not threshold:
+                        threshold = 0.5
+                    else:
+                        threshold = float(threshold)
+
+                    print(f"\nGenerating conditional plots with {threshold}% change threshold...")
+                    output_dir = conditional_plot.create_conditional_enhanced_plots(change_threshold=threshold)
+                    print(f"\nConditional plotting completed!")
+                    print(f"Output directory: {output_dir}")
+                    print("Check reports/ directory for plots with minimal change markers.")
+
+                except EOFError:
+                    print("Non-interactive mode: using default 0.5% threshold")
+                    output_dir = conditional_plot.create_conditional_enhanced_plots(change_threshold=0.5)
+                    print(f"Conditional plots generated in: {output_dir}")
+                except ValueError:
+                    print("Invalid threshold value, using default 0.5%")
+                    output_dir = conditional_plot.create_conditional_enhanced_plots(change_threshold=0.5)
+
+            except ImportError as e:
+                print(f"Enhanced conditional plotting module not available: {e}")
+                print("Please ensure enhanced_plot_conditional.py is in the project directory")
+
+        except Exception as e:
+            print(f"Conditional plotting failed: {e}")
+
+    def run_tag_state_dashboard(self):
+        """Run comprehensive tag state dashboard"""
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> LAUNCHING TAG STATE DASHBOARD <<<" + Style.RESET_ALL)
+            else:
+                print(">>> LAUNCHING TAG STATE DASHBOARD <<<")
+
+            # Import the tag state dashboard module
+            try:
+                from pi_monitor.tag_state_dashboard import TagStateDashboard
+
+                dashboard = TagStateDashboard()
+
+                # Get available units
+                units = self.db.get_all_units()
+
+                if not units:
+                    print("No units available for dashboard")
+                    return
+
+                # Ask user to select unit
+                print(f"\nAvailable units: {', '.join(units)}")
+                try:
+                    unit = input("Enter unit for tag state analysis: ").strip()
+                    if unit not in units:
+                        print(f"Unit '{unit}' not found")
+                        return
+
+                    # Get comprehensive tag states
+                    print(f"\nAnalyzing tag states for {unit}...")
+                    tag_states = dashboard.get_comprehensive_tag_states(unit, hours_back=24)
+
+                    # Display results
+                    print(f"\n=== TAG STATE DASHBOARD: {unit} ===")
+                    print(f"Analysis period: Last 24 hours")
+                    print(f"Total tags analyzed: {tag_states.get('total_tags', 0)}")
+                    print(f"Active tags: {tag_states.get('active_tags', 0)}")
+                    print(f"Stale tags: {tag_states.get('stale_tags', 0)}")
+                    print(f"Anomalous tags: {tag_states.get('anomalous_tags', 0)}")
+
+                    # Show tag details
+                    if 'tag_details' in tag_states:
+                        print(f"\nTOP TAG ISSUES:")
+                        for i, tag_info in enumerate(tag_states['tag_details'][:10], 1):
+                            print(f"{i:2d}. {tag_info['tag']}")
+                            print(f"     Status: {tag_info.get('status', 'Unknown')}")
+                            print(f"     Last update: {tag_info.get('last_update', 'Unknown')}")
+                            if 'anomaly_rate' in tag_info:
+                                print(f"     Anomaly rate: {tag_info['anomaly_rate']:.1%}")
+
+                except EOFError:
+                    print("Non-interactive mode: analyzing first unit")
+                    unit = units[0]
+                    tag_states = dashboard.get_comprehensive_tag_states(unit, hours_back=24)
+                    print(f"Tag state analysis completed for {unit}")
+
+            except ImportError as e:
+                print(f"Tag state dashboard module not available: {e}")
+                print("Please ensure pi_monitor/tag_state_dashboard.py is available")
+
+        except Exception as e:
+            print(f"Tag state dashboard failed: {e}")
+
+    def run_incident_reporter(self):
+        """Run WHO-WHAT-WHEN-WHERE incident reporting system"""
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> LAUNCHING INCIDENT REPORTING SYSTEM <<<" + Style.RESET_ALL)
+            else:
+                print(">>> LAUNCHING INCIDENT REPORTING SYSTEM <<<")
+
+            # Import the incident reporter module
+            import importlib
+            import subprocess
+            try:
+                # Get available units
+                units = self.db.get_all_units()
+
+                if not units:
+                    print("No units available for incident reporting")
+                    return
+
+                # Ask user to select unit and timeframe
+                print(f"\nAvailable units: {', '.join(units)}")
+                try:
+                    unit = input("Enter unit for incident report: ").strip()
+                    if unit not in units:
+                        print(f"Unit '{unit}' not found")
+                        return
+
+                    hours = input("Enter hours back to analyze (default 24): ").strip()
+                    if not hours:
+                        hours = "24"
+
+                    # Run the incident reporter script
+                    print(f"\nGenerating incident report for {unit} (last {hours} hours)...")
+                    result = subprocess.run([
+                        'python', 'scripts/anomaly_incident_reporter.py',
+                        '--unit', unit,
+                        '--hours', hours
+                    ], capture_output=True, text=True)
+
+                    if result.returncode == 0:
+                        print("Incident report generated successfully!")
+                        print("Check reports/ directory for the detailed incident report.")
+                        if result.stdout:
+                            print("\nReport summary:")
+                            print(result.stdout)
+                    else:
+                        print(f"Incident report generation failed: {result.stderr}")
+
+                except EOFError:
+                    print("Non-interactive mode: generating report for first unit")
+                    unit = units[0]
+                    result = subprocess.run([
+                        'python', 'scripts/anomaly_incident_reporter.py',
+                        '--unit', unit,
+                        '--hours', '24'
+                    ], capture_output=True, text=True)
+                    print(f"Incident report generated for {unit}")
+
+            except Exception as e:
+                print(f"Failed to run incident reporter: {e}")
+                print("Please ensure scripts/anomaly_incident_reporter.py is available")
+
+        except Exception as e:
+            print(f"Incident reporting failed: {e}")
+
     def shutdown_system(self):
         """Shutdown the unified system"""
         if self.console:
@@ -2150,7 +2418,115 @@ def run_continuous_monitoring(interval_hours=1):
             print(Fore.RED + f"\n>>> MONITORING FAILED: {e} <<<" + Style.RESET_ALL)
         else:
             print(f"\n>>> MONITORING FAILED: {e} <<<")
-    
+    def run_controlled_plots(self):
+        """Run controlled plotting with smart limits"""
+        try:
+            print("CONTROLLED PLOT GENERATION")
+            print("=" * 50)
+            print("This will create plots with intelligent limits:")
+            print("• Maximum 5 plots per unit")
+            print("• Maximum 8 priority units per report")
+            print("• Focus on most problematic tags only")
+            print("• Automatic cleanup of old reports")
+            print()
+
+            # Import and run controlled plotting
+            from controlled_anomaly_plots import create_controlled_plots
+            from pi_monitor.plot_controls import PlotController
+
+            controller = PlotController()
+
+            if COLORAMA_AVAILABLE:
+                print(Fore.CYAN + "Starting controlled analysis..." + Style.RESET_ALL)
+            else:
+                print("Starting controlled analysis...")
+
+            report_path = create_controlled_plots(controller)
+
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + f"Controlled analysis completed!" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"Report location: {report_path}" + Style.RESET_ALL)
+            else:
+                print("Controlled analysis completed!")
+                print(f"Report location: {report_path}")
+
+        except Exception as e:
+            print(f"Error in controlled plotting: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("Press Enter to continue...")
+
+    def cleanup_reports(self):
+        """Clean up old report directories"""
+        try:
+            print("REPORT CLEANUP UTILITY")
+            print("=" * 50)
+
+            from pi_monitor.plot_controls import PlotController
+            from pathlib import Path
+
+            controller = PlotController()
+            reports_dir = Path("reports")
+
+            if not reports_dir.exists():
+                print("No reports directory found.")
+                input("Press Enter to continue...")
+                return
+
+            # Check current usage
+            excessive = controller.check_disk_usage_alert(reports_dir)
+            if excessive:
+                if COLORAMA_AVAILABLE:
+                    print(Fore.RED + "Report disk usage is excessive!" + Style.RESET_ALL)
+                else:
+                    print("Report disk usage is excessive!")
+
+            print("Current report directories:")
+            report_dirs = [d for d in reports_dir.iterdir() if d.is_dir()]
+            report_dirs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+            for i, report_dir in enumerate(report_dirs[:10]):
+                try:
+                    files = list(report_dir.glob('**/*'))
+                    file_count = len([f for f in files if f.is_file()])
+                    size_mb = sum(f.stat().st_size for f in files if f.is_file()) / (1024 * 1024)
+                    mtime = datetime.fromtimestamp(report_dir.stat().st_mtime)
+                    print(f"  {i+1:2d}. {report_dir.name}")
+                    print(f"      Created: {mtime.strftime('%Y-%m-%d %H:%M')}")
+                    print(f"      Files: {file_count:,} | Size: {size_mb:.1f}MB")
+                except:
+                    print(f"  {i+1:2d}. {report_dir.name} (error reading)")
+
+            if len(report_dirs) > 10:
+                print(f"      ... and {len(report_dirs) - 10} more directories")
+
+            print()
+            try:
+                response = input("Run cleanup? (y/N): ").strip().lower()
+            except EOFError:
+                return
+
+            if response == 'y':
+                print("Running cleanup...")
+                stats = controller.cleanup_old_reports(reports_dir)
+
+                print(f"Cleanup completed!")
+                print(f"  Directories removed: {stats['cleaned']}")
+                print(f"  Space reclaimed: {stats['space_reclaimed_mb']:.1f}MB")
+
+                if stats['errors']:
+                    print(f"  Errors: {len(stats['errors'])}")
+            else:
+                print("Cleanup cancelled.")
+
+        except Exception as e:
+            print(f"Error in cleanup: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("Press Enter to continue...")
+
 
 def main():
     """Main entry point"""
@@ -2201,6 +2577,34 @@ def main():
     # Interactive mode
     system = TurbopredictSystem()
     system.run()
+
+
+def main_loop_auto_refresh(max_age_hours=1.0, single_run=True):
+    """Main loop for auto refresh with age threshold and single run option.
+
+    Args:
+        max_age_hours (float): Maximum age in hours for data freshness
+        single_run (bool): If True, run once and exit; if False, run continuously
+
+    Returns:
+        bool: Success status
+    """
+    try:
+        system = TurbopredictSystem()
+
+        if single_run:
+            # Run auto-refresh scan once
+            system.run_real_data_scanner(auto_refresh=True)
+            print(f"Auto-refresh completed (max age: {max_age_hours}h)")
+            return True
+        else:
+            # Run continuous monitoring
+            run_continuous_monitoring(interval_hours=max_age_hours)
+            return True
+
+    except Exception as e:
+        print(f"main_loop_auto_refresh failed: {e}")
+        return False
 
 
 if __name__ == "__main__":

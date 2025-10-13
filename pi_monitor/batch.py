@@ -86,21 +86,86 @@ def _fetch_single(
     # Write PISampDat to A2 as a dynamic formula and let results spill.
     # Only if dynamic arrays not available, fallback to legacy array formula over a bounded target.
     tag_escaped = tag.replace('"', '""')
-    formula = f'=PISampDat("{tag_escaped}","{start}","{end}","{step}",1,"{server}")'
+
+    # Quick connectivity probe: try PICompDat with a few server variants and select one that yields a numeric
+    def _server_variants(s: str) -> list[str]:
+        variants: list[str] = []
+        s = (s or '').strip()
+        if s:
+            # alias without backslashes
+            variants.append(s.lstrip('\\'))
+            # alias with leading backslashes (Excel examples often show this form)
+            variants.append('\\\\' + s.lstrip('\\'))
+        # final fallback: workbook default server
+        variants.append("")
+        # dedupe while preserving order
+        seen = set()
+        out: list[str] = []
+        for v in variants:
+            if v not in seen:
+                out.append(v)
+                seen.add(v)
+        return out
+
+    def _probe_server_connectivity(tag_name: str, server_name: str) -> bool:
+        try:
+            cell = sht.range("D1")
+            cell.clear()
+            f = f'=PICompDat("{tag_name}","*","{server_name}")'
+            cell.formula = f
+            try:
+                sht.book.app.api.CalculateFull()
+            except Exception:
+                pass
+            time.sleep(1.0)
+            v = cell.value
+            return isinstance(v, (int, float))
+        except Exception:
+            return False
+
+    # Resolve server argument. For AF attribute paths (\\AF\DB\Elem\Attr|Path),
+    # let Excel use the workbook's default server by passing an empty server string.
+    import os as _os_server
+    is_af_path = ('\\' in tag and '|' in tag)
+    base_server = (server or _os_server.getenv('PI_SERVER_NAME') or "").strip()
+    chosen_server = base_server
+    if not is_af_path:
+        for cand in _server_variants(base_server):
+            if _probe_server_connectivity(tag_escaped, cand):
+                chosen_server = cand
+                try:
+                    print(f"[info] Using server '{cand or 'default'}' for tag {tag}")
+                except Exception:
+                    pass
+                break
+    # Ensure Excel receives double-backslash form when a server is specified
+    server_literal = '' if is_af_path else chosen_server
+    if server_literal and not server_literal.startswith('\\\\'):
+        server_literal = '\\\\' + server_literal.lstrip('\\')
+    # PISampDat behavior: When the SAME formula is in columns A and B,
+    # PI DataLink returns timestamp in A and value in B (verified in working Excel files)
+    # Mode=1 means timestamps ON, which gives us the 2-column behavior
+    formula = f'=PISampDat("{tag_escaped}","{start}","{end}","{step}",1,"{server_literal}")'
+    try:
+        import os as _os_dbg_formula
+        if _os_dbg_formula.getenv('DEBUG_PI_FORMULA', '').strip():
+            print(f"[debug] Formula (both columns): {formula}")
+    except Exception:
+        pass
     max_rows = 100000  # covers ~1y at 6-min (≈87.6k)
-    # Prefer dynamic spill first (fast path)
+    # Estimate rows needed
     resolved_rows = _estimate_rows(start, end, step)
     target = sht.range((2, 1), (resolved_rows + 1, 2))
     target.clear()
+
+    # Place dynamic spill formula in A2 (preferred); fallback to array formula over target
     try:
-        # Try dynamic single-cell formula
         sht.range("A2").formula = formula
     except Exception:
-        # Fallback to array formula over a reasonably sized target
         try:
             target.formula_array = formula
         except Exception:
-            # As a last resort, put scalar formula
+            # Last resort: place scalar in A2 again
             sht.range("A2").formula = formula
 
     # Recalculate and robustly wait for PI DataLink to finish
@@ -119,6 +184,9 @@ def _fetch_single(
         t0 = time.monotonic()
         app = sht.book.app
         done_cycles = 0
+        # Early error detection - fail fast on Excel errors
+        early_error_detect = _os.getenv('PI_EARLY_ERROR_DETECT', '').strip() in ('1', 'true', 'yes', 'on')
+
         while (time.monotonic() - t0) < timeout:
             try:
                 # Encourage async queries to complete if available
@@ -137,6 +205,18 @@ def _fetch_single(
                             app.api.CalculateFull()
                 except Exception:
                     pass
+
+                # Early error detection: check for Excel error in A2 after 5s (fail fast)
+                if early_error_detect and (time.monotonic() - t0) > 5.0:
+                    try:
+                        cell_val = sht.range("A2").value
+                        if isinstance(cell_val, str) and cell_val.startswith('#'):
+                            # Excel error detected - tag likely doesn't exist or server unreachable
+                            print(f"[warn] Excel error detected for tag '{tag}': {cell_val} - skipping quickly")
+                            return False
+                    except Exception:
+                        pass
+
                 # Check Excel calculation state (XlCalculationState: 0=Done, 1=Calculating, 2=Pending)
                 try:
                     state = int(app.api.CalculationState)
@@ -175,7 +255,15 @@ def _fetch_single(
     _completed = _wait_for_datalink_completion(_fetch_timeout)
     if not _completed:
         try:
-            print(f"[warn] PI DataLink completion timed out after {_fetch_timeout:.1f}s for tag '{tag}'. Proceeding to read spill...")
+            print(f"[warn] PI DataLink completion timed out after {_fetch_timeout:.1f}s for tag '{tag}'. Forcing final calculation...")
+        except Exception:
+            pass
+        # Force one more full calculation + wait before giving up
+        try:
+            app.api.CalculateFullRebuild()
+            time.sleep(5)  # Give it 5 more seconds after rebuild
+            app.api.CalculateFull()
+            time.sleep(3)
         except Exception:
             pass
 
@@ -185,6 +273,16 @@ def _fetch_single(
         values = sht.range("A2").expand().value
     except Exception:
         values = None
+
+    # Debug: Log what we read
+    try:
+        import os as _os_debug
+        if _os_debug.getenv('DEBUG_PI_FETCH', '').strip():
+            rows_read = len(values) if values and isinstance(values, (list, tuple)) else 0
+            print(f"[debug] Read {rows_read} rows from Excel spill for tag: {tag}")
+    except Exception:
+        pass
+
     if not values:
         # Fallback to reading the bounded target range
         values = target.value
@@ -212,6 +310,14 @@ def _fetch_single(
                 values = None
             if not values:
                 values = target.value
+    # If still empty, try to diagnose the top-left cell contents for Excel error codes
+    if _is_empty(values):
+        try:
+            cell = sht.range("A2").value
+            if isinstance(cell, str) and cell.startswith('#'):
+                print(f"[warn] Excel returned error in A2 for tag {tag}: {cell}")
+        except Exception:
+            pass
     # Normalize to 2D list-of-lists
     if values is None:
         return pd.DataFrame(columns=["time", "value"])  # empty
@@ -226,16 +332,82 @@ def _fetch_single(
     try:
         df = pd.DataFrame(values, columns=["time", "value"])  # may include blanks
     except Exception:
-        return pd.DataFrame(columns=["time", "value"])  # treat as no data
-    # PI DataLink returns Excel serial date numbers when 'Show time stamps' is on.
-    # Convert Excel serial to pandas datetime using Excel's epoch.
-    try:
-        ser = pd.to_numeric(df["time"], errors="coerce")
-        df["time"] = pd.to_datetime(ser, unit="d", origin="1899-12-30")
-    except Exception:
-        df["time"] = pd.to_datetime(df["time"], errors="coerce")
-    df["value"] = pd.to_numeric(df["value"], errors="coerce")
-    df = df.dropna(subset=["time", "value"]).reset_index(drop=True)
+        df = pd.DataFrame(columns=["time", "value"])  # treat as no data
+
+    def _normalize_df(_df: pd.DataFrame) -> pd.DataFrame:
+        # PI DataLink returns Excel serial date numbers when 'Show time stamps' is on.
+        # Convert Excel serial to pandas datetime using Excel's epoch.
+        if _df.empty or "time" not in _df.columns or "value" not in _df.columns:
+            return pd.DataFrame(columns=["time", "value"])  # empty
+        try:
+            ser = pd.to_numeric(_df["time"], errors="coerce")
+            _df["time"] = pd.to_datetime(ser, unit="d", origin="1899-12-30")
+        except Exception:
+            _df["time"] = pd.to_datetime(_df["time"], errors="coerce")
+        _df["value"] = pd.to_numeric(_df["value"], errors="coerce")
+        _df = _df.dropna(subset=["time", "value"]).reset_index(drop=True)
+        return _df
+
+    df = _normalize_df(df)
+
+    # If still empty, attempt a more robust second pass:
+    # 1) Force full rebuild calculation
+    # 2) Retry using the workbook's default PI Server (empty server string)
+    if df.empty:
+        try:
+            app = sht.book.app
+            # Full rebuild calculation to wake PI DataLink on some installs
+            try:
+                app.api.CalculateFullRebuild()
+            except Exception:
+                try:
+                    app.api.CalculateFull()
+                except Exception:
+                    pass
+            # Rewrite the formula to use the workbook's default server
+            formula_default_server = f'=PISampDat("{tag_escaped}","{start}","{end}","{step}",1,"")'
+            try:
+                sht.range("A2").formula = formula_default_server
+            except Exception:
+                try:
+                    target.formula_array = formula_default_server
+                except Exception:
+                    sht.range("A2").formula = formula_default_server
+
+            # Wait a little longer on the second pass
+            extra_wait = 0.0
+            try:
+                extra_wait = float(_os.getenv('PI_FETCH_SECOND_PASS', '15').strip())
+            except Exception:
+                extra_wait = 15.0
+            if extra_wait > 0:
+                t1 = time.monotonic()
+                while (time.monotonic() - t1) < extra_wait:
+                    try:
+                        app.api.CalculateUntilAsyncQueriesDone()
+                    except Exception:
+                        pass
+                    try:
+                        sht.api.Calculate()
+                    except Exception:
+                        try:
+                            app.api.CalculateFull()
+                        except Exception:
+                            pass
+                    time.sleep(0.5)
+
+            # Re-read spill
+            try:
+                values = sht.range("A2").expand().value
+            except Exception:
+                values = None
+            if not values:
+                values = target.value
+            df = _normalize_df(pd.DataFrame(values, columns=["time", "value"]) if values else pd.DataFrame(columns=["time", "value"]))
+        except Exception:
+            # Keep empty df
+            pass
+
     return df
 
 
@@ -293,7 +465,13 @@ def build_unit_from_tags(
         try:
             app.display_alerts = False
             app.screen_updating = False
+            # Lower security to allow external data connections/formulas to execute without UI prompts
+            try:
+                app.api.AutomationSecurity = 1  # msoAutomationSecurityLow
+            except Exception:
+                pass
             # Best-effort: ensure PI DataLink is connected in this Excel instance
+            pi_datalink_loaded = False
             try:
                 for c in app.api.COMAddIns:
                     try:
@@ -301,24 +479,163 @@ def build_unit_from_tags(
                         prog = str(getattr(c, 'ProgId', ''))
                         name = (desc or prog).lower()
                         if ('pi' in name and 'datalink' in name) or ('pitime' in name):
-                            c.Connect = True
+                            # Force Connect multiple times - sometimes it needs coercion
+                            try:
+                                c.Connect = True
+                                time.sleep(0.5)
+                                c.Connect = True
+                            except Exception:
+                                pass
+                            # Verify it's actually connected
+                            if getattr(c, 'Connect', False):
+                                pi_datalink_loaded = True
+                                print(f'[info] PI DataLink COM add-in loaded: {desc or prog}')
                     except Exception:
                         pass
             except Exception:
                 pass
-            wb = app.books.open(str(open_path))
+
+            # Try Excel Add-ins as fallback (sometimes PI DataLink is here instead)
+            if not pi_datalink_loaded:
+                try:
+                    for addin in app.api.AddIns:
+                        try:
+                            nm = str(getattr(addin, 'Name', '')).upper()
+                            if 'PI' in nm and 'DATALINK' in nm:
+                                addin.Installed = True
+                                pi_datalink_loaded = True
+                                print(f'[info] PI DataLink Excel add-in enabled: {nm}')
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+            if not pi_datalink_loaded:
+                print('[ERROR] ========================================')
+                print('[ERROR] PI DataLink add-in NOT DETECTED!')
+                print('[ERROR] All fetches will likely fail')
+                print('[ERROR] Ensure PI DataLink is installed')
+                print('[ERROR] ========================================')
+                # Continue anyway - might work despite detection failure
+            # Optional debug: list add-ins
+            try:
+                import os as _os_dbg
+                if _os_dbg.getenv('DEBUG_XL_ADDINS', '').strip():
+                    print('[excel] Listing COM Add-ins:')
+                    for c in app.api.COMAddIns:
+                        try:
+                            print('   -', getattr(c, 'ProgId', ''), '| Connected=', getattr(c, 'Connect', None))
+                        except Exception:
+                            pass
+                    print('[excel] Listing Excel Add-ins:')
+                    for a in app.api.AddIns:
+                        try:
+                            print('   -', getattr(a, 'Name', ''), '| Installed=', getattr(a, 'Installed', None))
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+            # Also attempt to enable Excel add-ins by name, if present but not active
+            try:
+                for addin in app.api.AddIns:
+                    try:
+                        nm = str(getattr(addin, 'Name', '')).upper()
+                        title = str(getattr(addin, 'Title', '')).upper()
+                        if (('PI' in nm and 'DATALINK' in nm) or ('PI' in title and 'DATALINK' in title)):
+                            try:
+                                addin.Installed = True
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # Open workbook with suppressed link updates and recommendations
+            try:
+                wb = app.books.open(str(open_path), update_links=False, read_only=False, ignore_read_only_recommended=True)
+            except Exception:
+                wb = app.books.open(str(open_path))
+
+            # Warmup: Give PI DataLink time to initialize after workbook opens
+            # This is critical - when Excel opens via automation, PI DataLink needs a moment to connect
+            import os as _os_warmup
+            warmup_seconds = float(_os_warmup.getenv('PI_DATALINK_WARMUP', '3').strip())
+            if warmup_seconds > 0:
+                print(f'[info] Waiting {warmup_seconds:.1f}s for PI DataLink to initialize...')
+                time.sleep(warmup_seconds)
+                # Trigger a calculation to wake up PI DataLink
+                try:
+                    app.api.CalculateFull()
+                except Exception:
+                    pass
+
+            # Optional: auto-detect working PI server if requested via env
+            try:
+                autodetect = str(os.getenv('PI_SERVER_CANDIDATES', '')).strip()
+            except Exception:
+                autodetect = ''
+            chosen_server = server
+            if autodetect:
+                try:
+                    candidates = [s.strip() for s in autodetect.split(',') if s.strip()]
+                    # Always try the provided server first
+                    if str(server).strip():
+                        if server.lstrip('\\') not in [c.lstrip('\\') for c in candidates]:
+                            candidates = [server] + candidates
+                    # Probe using the first non-comment tag
+                    probe_tag = None
+                    for t in tags:
+                        ts = t.strip()
+                        if ts and not ts.startswith('#'):
+                            probe_tag = ts
+                            break
+                    if probe_tag:
+                        for cand in candidates:
+                            try:
+                                print(f"[info] Probing PI server candidate: {cand}")
+                            except Exception:
+                                pass
+                            df_probe = _fetch_single(
+                                wb, work_sheet, probe_tag, cand, start, end, step, settle_seconds=max(1.5, settle_seconds)
+                            )
+                            if not df_probe.empty:
+                                chosen_server = cand
+                                try:
+                                    print(f"[info] Selected PI server: {cand}")
+                                except Exception:
+                                    pass
+                                break
+                except Exception:
+                    pass
+
+            # Count valid tags
+            valid_tags = [t.strip() for t in tags if t.strip() and not t.strip().startswith("#")]
+            total_tags = len(valid_tags)
+            tags_processed = 0
+            tags_success = 0
+            tags_nodata = 0
 
             for tag in tags:
                 tag = tag.strip()
                 if not tag or tag.startswith("#"):
                     continue
-                df = _fetch_single(wb, work_sheet, tag, server, start, end, step, settle_seconds=settle_seconds)
+
+                tags_processed += 1
+                print(f"[{tags_processed}/{total_tags}] Fetching: {tag}")
+
+                df = _fetch_single(wb, work_sheet, tag, chosen_server, start, end, step, settle_seconds=settle_seconds)
                 if df.empty:
+                    tags_nodata += 1
                     print(f"[warn] No data for tag: {tag}")
+                    print(f"[progress] Success: {tags_success}/{total_tags} | No data: {tags_nodata}/{total_tags} | Remaining: {total_tags - tags_processed}")
                     continue
+
+                tags_success += 1
                 df["plant"] = plant
                 df["unit"] = unit
                 df["tag"] = _slug(tag)
+                print(f"[progress] Success: {tags_success}/{total_tags} | No data: {tags_nodata}/{total_tags} | Remaining: {total_tags - tags_processed}")
 
                 # Reorder columns
                 df = df[["time", "value", "plant", "unit", "tag"]]
@@ -328,6 +645,16 @@ def build_unit_from_tags(
                     writer = pq.ParquetWriter(str(out_parquet), table.schema, compression="zstd")
                 writer.write_table(table)
                 rows_this_try += len(df)
+
+            # Print final summary
+            print(f"\n{'='*70}")
+            print(f"FETCH SUMMARY FOR {unit}")
+            print(f"{'='*70}")
+            print(f"Total tags:       {total_tags}")
+            print(f"Success:          {tags_success} ({tags_success*100//total_tags if total_tags > 0 else 0}%)")
+            print(f"No data:          {tags_nodata} ({tags_nodata*100//total_tags if total_tags > 0 else 0}%)")
+            print(f"Total rows fetched: {rows_this_try:,}")
+            print(f"{'='*70}\n")
 
             try:
                 wb.save()
@@ -347,9 +674,10 @@ def build_unit_from_tags(
 
         wrote_any_rows = wrote_any_rows or (rows_this_try > 0)
         attempts += 1
-        # Retry rule: if ABF or PCMSB and initial headless attempt wrote 0 rows.
+        # Retry rule: if initial headless attempt wrote 0 rows for any plant,
+        # retry once with Excel visible to ensure PI DataLink loads correctly.
         # Allow skipping the visible Excel fallback via env NO_VISIBLE_FALLBACK=1|true|yes|on
-        if ((plant.upper().startswith('ABF') or plant.upper().startswith('PCMSB')) and (not visible) and rows_this_try == 0 and attempts == 1):
+        if ((not visible) and rows_this_try == 0 and attempts == 1):
             no_visible = str(os.getenv('NO_VISIBLE_FALLBACK', '')).strip().lower() in {"1", "true", "yes", "on"}
             if no_visible:
                 try:

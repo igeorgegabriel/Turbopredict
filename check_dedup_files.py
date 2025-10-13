@@ -99,7 +99,7 @@ def check_dedup_files():
         print("2. Or run option [1] again to retry the full refresh")
 
     else:
-        print("✓ All raw parquet files have corresponding dedup versions")
+        print("OK All raw parquet files have corresponding dedup versions")
 
     # Check PCMSB specifically
     pcmsb_raw = [f for f in raw_files if any(unit in f.name for unit in ['C-02001', 'C-104', 'C-13001', 'C-1301', 'C-1302', 'C-201', 'C-202'])]
@@ -110,11 +110,11 @@ def check_dedup_files():
     print(f"PCMSB dedup files: {len(pcmsb_dedup)}")
 
     if len(pcmsb_raw) > len(pcmsb_dedup):
-        print("⚠️  PCMSB missing some dedup files")
+        print("WARNING: PCMSB missing some dedup files")
     elif len(pcmsb_raw) == 0:
-        print("⚠️  No PCMSB files found - run option [1] to generate them")
+        print("WARNING: No PCMSB files found - run option [1] to generate them")
     else:
-        print("✓ PCMSB dedup files look complete")
+        print("OK PCMSB dedup files look complete")
 
 if __name__ == "__main__":
     check_dedup_files()

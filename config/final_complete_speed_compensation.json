@@ -1,0 +1,137 @@
+{
+  "config_type": "final_complete_multi_plant_speed_compensation",
+  "generated_at": "2025-09-28T09:45:00",
+  "purpose": "Complete speed compensation system across all plants and units",
+  "target_analysis": "option_2_precise_analysis",
+  "description": "Final comprehensive speed compensation with all discovered speed indicators",
+
+  "complete_plant_coverage": {
+    "PCFS": {
+      "units": 4,
+      "speed_tags": 6,
+      "total_data_points": 29760,
+      "compensation_grade": "industrial_excellent"
+    },
+    "PCMSB": {
+      "units": 7,
+      "speed_tags": 10,
+      "total_data_points": 612618,
+      "compensation_grade": "industrial_excellent"
+    },
+    "ABF": {
+      "units": 1,
+      "speed_tags": 2,
+      "total_data_points": 184822,
+      "compensation_grade": "industrial_excellent"
+    },
+    "XT": {
+      "units": 1,
+      "speed_tags": 3,
+      "total_data_points": 256868,
+      "compensation_grade": "industrial_excellent"
+    }
+  },
+
+  "complete_speed_tag_inventory": {
+    "PCFS_speed_tags": [
+      "PCFS_K-12-01_12SI-401B_PV (5,500 RPM avg)",
+      "PCFS_K-16-01_16SI-501B_PV (5,000 RPM avg)",
+      "PCFS_K-19-01_19SI-601B_PV (5,000 RPM avg)",
+      "PCFS_K-31-01_31SI-301B_PV (3,400 RPM avg)",
+      "PCFS_K-31-01_31SIA-306_PV (validation)",
+      "PCFS_K-31-01_31SIA-307_PV (validation)"
+    ],
+
+    "PCMSB_speed_tags": [
+      "PCM_C-104_SIALH-1451_PV (9,817 RPM avg)",
+      "PCM_C-201_SI-2151_PV (9,002 RPM avg)",
+      "PCM_C-202_SIALH-2251_PV (8,193 RPM avg)",
+      "PCM_C-202_SIC-2252-SP_PV (8,195 RPM avg)",
+      "PCM_C-202_SIC-2252-MV_PV (57% control avg)",
+      "PCM_C-1301_SIC13201OFB_PV (83% control avg)",
+      "PCM_C-1302_SIC13401OFB_PV (88% control avg)",
+      "PCM_C-02001_020SI6601_PV (5,775 RPM avg)",
+      "PCM_C-13001_130SI4409_PV (4,005 RPM avg)",
+      "Total: 9 speed indicators across 7 units"
+    ],
+
+    "ABF_speed_tags": [
+      "ABF_07-MT001_SI-07002D_new_PV (10,674 RPM avg)",
+      "ABF_07-MT001_SI-07002MV_new_PV (72% control avg)"
+    ],
+
+    "XT_speed_tags": [
+      "PCM_XT-07002_070SI8101_PV (91% avg)",
+      "PCM_XT-07002_070SI8102_PV (18% avg)",
+      "PCM_XT-07002_070SI8103_PV (69% avg)"
+    ]
+  },
+
+  "units_with_excellent_compensation": {
+    "tier_1_multi_speed_validation": [
+      "PCFS K-31-01 (3 speed tags)",
+      "PCMSB C-202 (3 speed tags)",
+      "XT-07002 (3 speed tags)"
+    ],
+    "tier_2_dual_speed_validation": [
+      "ABF 07-MT001 (2 speed tags)"
+    ],
+    "tier_3_single_speed_high_quality": [
+      "PCFS K-12-01, K-16-01, K-19-01",
+      "PCMSB C-104, C-201, C-1301, C-1302, C-02001, C-13001"
+    ]
+  },
+
+  "speed_compensation_formulas": {
+    "rpm_based_units": {
+      "formula": "normalized_value = actual_value * (baseline_rpm / current_rpm)",
+      "applicable_units": [
+        "PCFS K-12-01 (baseline: 5500)",
+        "PCFS K-16-01 (baseline: 5000)",
+        "PCFS K-19-01 (baseline: 5000)",
+        "PCFS K-31-01 (baseline: 3400)",
+        "PCMSB C-104 (baseline: 9817)",
+        "PCMSB C-201 (baseline: 9002)",
+        "PCMSB C-202 (baseline: 8193)",
+        "PCMSB C-02001 (baseline: 5775)",
+        "PCMSB C-13001 (baseline: 4005)",
+        "ABF 07-MT001 (baseline: 10674)"
+      ]
+    },
+    "control_percentage_units": {
+      "formula": "normalized_value = actual_value * (baseline_percent / current_percent)",
+      "applicable_units": [
+        "PCMSB C-1301 (baseline: 83%)",
+        "PCMSB C-1302 (baseline: 88%)",
+        "ABF 07-MT001 secondary (baseline: 72%)",
+        "XT-07002 all tags (baselines: 91%, 18%, 69%)"
+      ]
+    }
+  },
+
+  "system_statistics": {
+    "total_plants": 4,
+    "total_units": 13,
+    "total_speed_tags": 21,
+    "total_data_points": 1083068,
+    "coverage_percentage": 100,
+    "compensation_ready_units": 13,
+    "industrial_grade_coverage": "complete"
+  },
+
+  "option_2_implementation_status": {
+    "phase_1_ready": "All PCFS units (4/4)",
+    "phase_2_ready": "All PCMSB units (7/7)",
+    "phase_3_ready": "All ABF units (1/1)",
+    "phase_4_ready": "All XT units (1/1)",
+    "overall_status": "COMPLETE - All plants and units ready for speed-compensated Option [2] analysis"
+  },
+
+  "final_ranking_by_compensation_quality": [
+    "1. PCFS K-31-01 (3 speed tags, cross-validation) - EXCELLENT",
+    "2. PCMSB C-202 (3 speed tags, cross-validation) - EXCELLENT",
+    "3. XT-07002 (3 speed tags, process control) - EXCELLENT",
+    "4. ABF 07-MT001 (2 speed tags, dual validation) - EXCELLENT",
+    "5. All other units (1 speed tag each, high data quality) - HIGH"
+  ]
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Sequence
+import os
 
 
 def _ensure_duckdb():
@@ -34,7 +35,33 @@ def dedup_parquet(
     if _ensure_duckdb():
         import duckdb
 
+        # Configure DuckDB to spill to disk and cap memory usage for large files
+        mem_limit = os.getenv("DUCKDB_MEMORY_LIMIT", "4GB")  # Increased for large dedup operations
+        tmp_dir = Path(os.getenv("DUCKDB_TEMP_DIR", str(out_path.parent / "_duckdb_tmp")))
+        try:
+            tmp_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            # Fall back to system temp if custom dir cannot be created
+            import tempfile as _tempfile
+            tmp_dir = Path(_tempfile.gettempdir())
+
         con = duckdb.connect()
+        # Best-effort PRAGMAs (ignore if not supported)
+        try:
+            con.execute(f"PRAGMA memory_limit='{mem_limit}'")
+        except Exception:
+            pass
+        try:
+            con.execute(f"PRAGMA temp_directory='{tmp_dir.as_posix()}'")
+        except Exception:
+            pass
+        try:
+            threads = os.getenv("DUCKDB_THREADS")
+            if threads:
+                con.execute(f"PRAGMA threads={int(threads)}")
+        except Exception:
+            pass
+
         key_list = ", ".join(keys)
         # any_value picks a representative value when duplicates exist.
         sql = f"""
@@ -56,4 +83,3 @@ COPY (
     df = df.sort_values(list(keys)).drop_duplicates(subset=list(keys), keep="first")
     df.to_parquet(out_path, index=False)
     return out_path
-

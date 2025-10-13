@@ -18,7 +18,12 @@ import logging
 sys.path.insert(0, os.path.abspath('.'))
 
 from pi_monitor.smart_anomaly_detection import smart_anomaly_detection
-from pi_monitor.plot_controls import PlotController, create_controlled_report
+from pi_monitor.plot_controls import (
+    PlotController,
+    create_controlled_report,
+    build_scan_root_dir,
+    ensure_unit_dir,
+)
 
 # Setup logging
 logging.basicConfig(level=logging.INFO)
@@ -40,14 +45,8 @@ def create_controlled_plots(controller: PlotController = None) -> Path:
     plt.style.use('default')
     plt.rcParams['figure.figsize'] = (14, 8)  # Smaller than before
 
-    # Create controlled folder structure
-    base_reports_dir = Path("reports")
-
-    # Simpler naming - just timestamp
-    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-    report_name = f"controlled_analysis_{timestamp}"
-
-    main_output_dir = base_reports_dir / report_name
+    # Create controlled folder structure with day-of-scan master folder
+    main_output_dir = build_scan_root_dir(Path("reports"))
     main_output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"Output directory: {main_output_dir}")
@@ -74,8 +73,7 @@ def create_controlled_plots(controller: PlotController = None) -> Path:
         print("-" * 50)
 
         # Create unit directory
-        unit_dir = main_output_dir / unit
-        unit_dir.mkdir(exist_ok=True)
+        unit_dir = ensure_unit_dir(main_output_dir, unit)
 
         # Find parquet files for this unit
         unit_files = glob.glob(f"data/processed/*{unit}*.parquet")

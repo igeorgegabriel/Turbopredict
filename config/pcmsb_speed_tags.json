@@ -1,0 +1,53 @@
+{
+  "config_type": "pcmsb_speed_indicator_tags",
+  "generated_at": "2025-09-28T09:00:00",
+  "purpose": "PCMSB Speed Indicator tags for precise abnormal behavior compensation",
+  "target_analysis": "option_2_precise_analysis",
+  "description": "PCMSB plant speed indicator tag verified with actual data",
+
+  "pcmsb_speed_tags": {
+    "C-104": {
+      "primary_speed_tag": "PCM_C-104_SIALH-1451_PV",
+      "tag_type": "speed_indicator_analog_high",
+      "expected_units": "RPM",
+      "compensation_ready": true,
+      "data_verified": true,
+      "data_characteristics": {
+        "data_points": 87601,
+        "range": "0.00 - 14073.47 RPM",
+        "mean": 9817.48,
+        "median": 10289.37,
+        "std_deviation": 2172.84,
+        "typical_operating_range": "8000 - 12000 RPM"
+      }
+    }
+  },
+
+  "tag_analysis": {
+    "SIALH-1451": {
+      "description": "Speed Indicator Analog High - C-104 unit",
+      "measurement_type": "Motor/Equipment RPM",
+      "compensation_suitability": "excellent",
+      "data_quality": "high",
+      "time_coverage": "1 year (2024-09-15 to 2025-09-15)"
+    }
+  },
+
+  "speed_compensation_strategy": {
+    "C-104": {
+      "method": "rpm_based_normalized_analysis",
+      "baseline_speed": 9817.48,
+      "compensation_formula": "normalized_value = actual_value * (9817.48 / current_speed)",
+      "abnormal_threshold_adjustment": "rpm_adaptive",
+      "speed_stability_threshold": 500,
+      "operating_range_validation": "8000_to_12000_rpm"
+    }
+  },
+
+  "implementation_ready": {
+    "status": "fully_ready",
+    "confidence": "high",
+    "data_availability": "complete",
+    "compensation_type": "industrial_grade"
+  }
+}

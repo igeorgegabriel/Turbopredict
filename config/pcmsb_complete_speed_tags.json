@@ -1,0 +1,113 @@
+{
+  "config_type": "pcmsb_complete_speed_compensation",
+  "generated_at": "2025-09-28T09:15:00",
+  "purpose": "Complete PCMSB speed compensation across all units",
+  "target_analysis": "option_2_precise_analysis",
+  "description": "All PCMSB plant speed indicators verified with comprehensive data",
+
+  "pcmsb_speed_tags_complete": {
+    "C-104": {
+      "primary_speed_tag": "PCM_C-104_SIALH-1451_PV",
+      "tag_type": "speed_indicator_analog_high",
+      "expected_units": "RPM",
+      "data_points": 87601,
+      "range": "0.00 - 14073.47 RPM",
+      "mean": 9817.48,
+      "compensation_ready": true
+    },
+
+    "C-201": {
+      "primary_speed_tag": "PCM_C-201_SI-2151_PV",
+      "tag_type": "speed_indicator",
+      "expected_units": "RPM",
+      "data_points": 87601,
+      "range": "0.00 - 9356.04 RPM",
+      "mean": 9001.99,
+      "compensation_ready": true
+    },
+
+    "C-202": {
+      "primary_speed_tag": "PCM_C-202_SIALH-2251_PV",
+      "secondary_speed_tags": [
+        "PCM_C-202_SIC-2252-SP_PV",
+        "PCM_C-202_SIC-2252-MV_PV"
+      ],
+      "tag_type": "multi_speed_indicator",
+      "primary_units": "RPM",
+      "secondary_units": "RPM, % Control",
+      "data_points": 87601,
+      "primary_range": "0.00 - 8571.45 RPM",
+      "compensation_ready": true,
+      "multi_validation": true
+    },
+
+    "C-1301": {
+      "primary_speed_tag": "PCM_C-1301_SIC13201OFB_PV",
+      "tag_type": "speed_indicator_control",
+      "expected_units": "% or Hz",
+      "data_points": 87601,
+      "range": "1.6 - 99.9",
+      "mean": 83.3,
+      "compensation_ready": true
+    }
+  },
+
+  "speed_compensation_strategies": {
+    "C-104": {
+      "method": "rpm_based_normalized_analysis",
+      "baseline_speed": 9817.48,
+      "compensation_formula": "normalized_value = actual_value * (9817.48 / current_speed)",
+      "confidence": "high"
+    },
+
+    "C-201": {
+      "method": "rpm_based_normalized_analysis",
+      "baseline_speed": 9001.99,
+      "compensation_formula": "normalized_value = actual_value * (9001.99 / current_speed)",
+      "confidence": "high"
+    },
+
+    "C-202": {
+      "method": "multi_speed_cross_validation",
+      "primary_baseline": 8192.98,
+      "compensation_formula": "normalized_value = actual_value * (8192.98 / current_primary_speed)",
+      "cross_validation": "validate_with_SIC-2252-SP_and_SIC-2252-MV",
+      "confidence": "excellent"
+    },
+
+    "C-1301": {
+      "method": "control_percentage_normalized_analysis",
+      "baseline_percentage": 83.3,
+      "compensation_formula": "normalized_value = actual_value * (83.3 / current_percentage)",
+      "confidence": "high"
+    }
+  },
+
+  "pcmsb_plant_summary": {
+    "total_units": 4,
+    "total_speed_tags": 6,
+    "total_data_points": 350404,
+    "compensation_coverage": "100%",
+    "data_quality": "excellent",
+    "time_coverage": "1 year per unit"
+  },
+
+  "tag_analysis_detailed": {
+    "rpm_based_tags": [
+      "PCM_C-104_SIALH-1451_PV (9817 RPM avg)",
+      "PCM_C-201_SI-2151_PV (9002 RPM avg)",
+      "PCM_C-202_SIALH-2251_PV (8193 RPM avg)",
+      "PCM_C-202_SIC-2252-SP_PV (8195 RPM avg)"
+    ],
+    "control_based_tags": [
+      "PCM_C-202_SIC-2252-MV_PV (57% avg control)",
+      "PCM_C-1301_SIC13201OFB_PV (83% avg control)"
+    ]
+  },
+
+  "implementation_priority": {
+    "tier_1_excellent": "C-202 (3 speed tags with cross-validation)",
+    "tier_2_high": "C-104, C-201 (1 speed tag each, RPM-based)",
+    "tier_3_high": "C-1301 (1 control tag, percentage-based)"
+  }
+}

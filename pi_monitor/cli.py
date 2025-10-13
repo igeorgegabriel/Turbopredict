@@ -84,6 +84,17 @@ def main(argv: list[str] | None = None) -> None:
     p_archive = sub.add_parser("archive-strays", help="Archive non-unit Parquet files in processed dir")
     p_archive.add_argument("--processed", type=Path, default=Path("data/processed"))
 
+    # PI Web API connectivity check
+    p_web = sub.add_parser("webapi-check", help="Check PI Web API connectivity and optional tag fetch")
+    p_web.add_argument("--base-url", type=str, default=None, help="PI Web API base URL (e.g., https://host/piwebapi)")
+    p_web.add_argument("--server", type=str, default=None, help="PI Data Archive server name (e.g., PTSG-1MMPDPdb01)")
+    p_web.add_argument("--tag", type=str, default=None, help="Optional PI tag to resolve/fetch")
+    p_web.add_argument("--start", type=str, default="-2h", help="Relative start (e.g., -2h)")
+    p_web.add_argument("--end", type=str, default="*", help="End time (default now '*')")
+    p_web.add_argument("--step", type=str, default="-0.1h", help="Step (e.g., -0.1h = 6 minutes)")
+    p_web.add_argument("--timeout", type=float, default=15.0, help="HTTP timeout seconds")
+    p_web.add_argument("--insecure", action="store_true", help="Disable SSL verification (testing only)")
+
     # Fix unit alias inside Parquet files and filenames
     p_fix_alias = sub.add_parser("fix-unit-alias", help="Replace unit alias with canonical name in Parquet files")
     p_fix_alias.add_argument("--alias", required=True, help="Alias unit string to replace (e.g., FI-07001)")
@@ -369,6 +380,68 @@ def main(argv: list[str] | None = None) -> None:
             print(f"Parquet auto-refresh failed: {e}")
             import traceback
             traceback.print_exc()
+        return
+
+    if args.cmd == "webapi-check":
+        import os
+        from .webapi import PIWebAPIClient, fetch_tags_via_webapi
+
+        server = args.server or os.getenv("PI_SERVER_NAME") or "PTSG-1MMPDPdb01"
+        base_url = args.base_url or os.getenv("PI_WEBAPI_URL")
+        if not base_url:
+            # Construct from server if not provided
+            base_url = f"https://{server}/piwebapi"
+
+        print("PI Web API Check")
+        print("=" * 50)
+        print(f"Base URL : {base_url}")
+        print(f"Server   : {server}")
+
+        client = PIWebAPIClient(base_url=base_url, auth_mode="windows", timeout=args.timeout, verify_ssl=not args.insecure)
+        ok, info = client.health_check()
+        if ok:
+            print("Health   : OK")
+        else:
+            print(f"Health   : FAIL ({info})")
+            # No need to proceed to tag fetch, but continue if user passed a tag explicitly
+
+        if args.tag:
+            print(f"\nResolving tag: {args.tag}")
+            try:
+                webid = client.resolve_point_webid(server, args.tag)
+                print(f"WebId    : {webid if webid else 'NOT FOUND'}")
+            except Exception as e:
+                print(f"Resolve  : ERROR ({e})")
+                webid = None
+
+            print("\nFetching small window via Web API (if possible)…")
+            try:
+                df = fetch_tags_via_webapi(
+                    tags=[args.tag],
+                    server=server,
+                    start=args.start,
+                    end=args.end,
+                    step=args.step,
+                    base_url=base_url,
+                    timeout=args.timeout,
+                    verify_ssl=not args.insecure,
+                    max_workers=1,
+                    qps=1.0,
+                    retries=0,
+                )
+                rows = len(df)
+                uniq = (df["tag"].nunique() if (rows and "tag" in df.columns) else 0)
+                print(f"Rows     : {rows}")
+                print(f"Tags     : {uniq}")
+                if rows:
+                    # Print first few timestamps/values for confirmation
+                    try:
+                        head = df.head(5)[["time", "value"]]
+                        print(head.to_string(index=False))
+                    except Exception:
+                        pass
+            except Exception as e:
+                print(f"Fetch    : ERROR ({e})")
         return
 
     if args.cmd == "db-status":

@@ -86,7 +86,6 @@ test_reports/
 
 # Workspace and IDE files
 CodeX.code-workspace
-.claude/
 
 # Environment files
 .env.enhanced

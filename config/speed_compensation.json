@@ -1,0 +1,157 @@
+{
+  "config_type": "speed_indicator_compensation",
+  "generated_at": "2025-09-28T08:15:00",
+  "purpose": "TRUE speed compensation using Speed Indicator (SI) tags for abnormal behavior detection",
+  "target_analysis": "option_2_precise_analysis",
+  "description": "Uses actual Speed Indicator (SI) tags for precise speed compensation",
+
+  "units_with_speed_compensation": {
+    "K-12-01": {
+      "primary_speed_tag": "PCFS_K-12-01_12SI-401B_PV",
+      "compensation_type": "speed_indicator",
+      "expected_range": "4996-6042 RPM",
+      "data_verified": true,
+      "data_points": 7440,
+      "compensation_factor": "speed_normalized",
+      "backup_tags": [
+        "PCFS_K-12-01_12FHC-004_MV"
+      ]
+    },
+
+    "K-16-01": {
+      "primary_speed_tag": "PCFS_K-16-01_16SI-501B_PV",
+      "compensation_type": "speed_indicator",
+      "expected_range": "0-10031 RPM",
+      "data_verified": true,
+      "data_points": 7440,
+      "compensation_factor": "speed_normalized",
+      "backup_tags": [
+        "PCFS_K-16-01_16FHC-005_MV"
+      ]
+    },
+
+    "K-19-01": {
+      "primary_speed_tag": "PCFS_K-19-01_19SI-601B_PV",
+      "compensation_type": "speed_indicator",
+      "expected_range": "0-10021 RPM",
+      "data_verified": true,
+      "data_points": 7440,
+      "compensation_factor": "speed_normalized",
+      "backup_tags": [
+        "PCFS_K-19-01_19FHC-008_MV"
+      ]
+    },
+
+    "K-31-01": {
+      "primary_speed_tag": "PCFS_K-31-01_31SI-301B_PV",
+      "secondary_speed_tags": [
+        "PCFS_K-31-01_31SIA-306_PV",
+        "PCFS_K-31-01_31SIA-307_PV"
+      ],
+      "compensation_type": "multi_speed_indicator",
+      "expected_range": "0-6793 RPM (primary)",
+      "data_verified": true,
+      "data_points": 7440,
+      "compensation_factor": "multi_speed_normalized",
+      "backup_tags": [
+        "PCFS_K-31-01_31FHC-002_MV"
+      ]
+    }
+  },
+
+  "speed_compensation_strategy": {
+    "K-12-01": {
+      "method": "speed_indicator_normalized_analysis",
+      "baseline_speed": 5500.0,
+      "compensation_formula": "normalized_value = actual_value * (5500.0 / current_speed)",
+      "abnormal_threshold_adjustment": "speed_adaptive",
+      "speed_stability_threshold": 100
+    },
+
+    "K-16-01": {
+      "method": "speed_indicator_normalized_analysis",
+      "baseline_speed": 5000.0,
+      "compensation_formula": "normalized_value = actual_value * (5000.0 / current_speed)",
+      "abnormal_threshold_adjustment": "speed_adaptive",
+      "speed_stability_threshold": 200
+    },
+
+    "K-19-01": {
+      "method": "speed_indicator_normalized_analysis",
+      "baseline_speed": 5000.0,
+      "compensation_formula": "normalized_value = actual_value * (5000.0 / current_speed)",
+      "abnormal_threshold_adjustment": "speed_adaptive",
+      "speed_stability_threshold": 200
+    },
+
+    "K-31-01": {
+      "method": "multi_speed_indicator_analysis",
+      "primary_baseline_speed": 3400.0,
+      "compensation_formula": "normalized_value = actual_value * (3400.0 / current_primary_speed)",
+      "cross_validation": "validate_with_SIA_306_and_SIA_307",
+      "abnormal_threshold_adjustment": "multi_speed_adaptive",
+      "speed_stability_threshold": 150
+    }
+  },
+
+  "analysis_recommendations": {
+    "K-12-01": {
+      "enable_speed_compensation": true,
+      "monitor_valve_stability": true,
+      "valve_change_threshold": 0.15,
+      "compensation_confidence": "medium"
+    },
+
+    "K-16-01": {
+      "enable_speed_compensation": true,
+      "monitor_valve_stability": true,
+      "valve_change_threshold": 0.15,
+      "compensation_confidence": "medium"
+    },
+
+    "K-19-01": {
+      "enable_speed_compensation": true,
+      "monitor_valve_stability": true,
+      "valve_change_threshold": 0.15,
+      "compensation_confidence": "medium"
+    },
+
+    "K-31-01": {
+      "enable_speed_compensation": true,
+      "monitor_valve_stability": true,
+      "valve_change_threshold": 0.15,
+      "compensation_confidence": "medium"
+    }
+  },
+
+  "option_2_integration": {
+    "description": "Integration settings for TurboPredict Option [2] analysis",
+    "compensation_method": "flow_control_normalization",
+    "implementation": {
+      "step_1": "Read valve position from primary_speed_tag",
+      "step_2": "Calculate compensation factor using baseline_valve_position",
+      "step_3": "Apply normalized_value = actual_value * compensation_factor",
+      "step_4": "Use normalized values for abnormal behavior detection"
+    },
+    "benefits": [
+      "Accounts for operational variations due to valve position changes",
+      "Reduces false positives when valves operate at different positions",
+      "Provides more accurate baseline for abnormal behavior detection",
+      "Enables precise analysis even during varying operational conditions"
+    ]
+  },
+
+  "implementation_notes": {
+    "tag_types": {
+      "FHC_MV": "Flow control valve position (0-100%)",
+      "FI_PV": "Flow indicator process value",
+      "backup_strategy": "Use flow indicators if valve position unavailable"
+    },
+    "compensation_logic": {
+      "normal_operation": "Valve positions typically 30-70%",
+      "high_flow": "Valve >70% requires compensation",
+      "low_flow": "Valve <30% requires compensation",
+      "compensation_factor": "baseline_position / current_position"
+    }
+  }
+}

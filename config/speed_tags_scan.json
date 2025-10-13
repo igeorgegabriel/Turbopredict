@@ -1,0 +1,6 @@
+{
+  "scan_type": "pure_speed_tags_only",
+  "purpose": "speed_compensation_for_abnormal_behavior_detection",
+  "target_analysis": "option_2_precise_analysis",
+  "units": {}
+}

@@ -25,9 +25,9 @@ def verify_option1_integration():
     print("KEY FILES FOR OPTION [1]:")
     for file_path in key_files:
         if Path(file_path).exists():
-            print(f"   ✓ {file_path}")
+            print(f"   OK {file_path}")
         else:
-            print(f"   ✗ {file_path} - MISSING")
+            print(f"   MISSING {file_path}")
     print()
 
     # Check specific fixes
@@ -39,13 +39,13 @@ def verify_option1_integration():
         if scan_file.exists():
             content = scan_file.read_text()
             if "PCMSB units (C-) use DL_WORK sheet" in content:
-                fixes_status["Sheet Mapping"] = "✓ INTEGRATED"
+                fixes_status["Sheet Mapping"] = "INTEGRATED"
             else:
-                fixes_status["Sheet Mapping"] = "✗ NOT INTEGRATED"
+                fixes_status["Sheet Mapping"] = "NOT INTEGRATED"
         else:
-            fixes_status["Sheet Mapping"] = "✗ FILE MISSING"
+            fixes_status["Sheet Mapping"] = "FILE MISSING"
     except Exception as e:
-        fixes_status["Sheet Mapping"] = f"✗ ERROR: {e}"
+        fixes_status["Sheet Mapping"] = f"ERROR: {e}"
 
     # 2. PCMSB Timeout Fix
     try:
@@ -53,27 +53,27 @@ def verify_option1_integration():
         if scan_file.exists():
             content = scan_file.read_text()
             if "settle_time = 30.0 if str(plant).upper().startswith(\"PCMSB\")" in content:
-                fixes_status["Timeout Fix"] = "✓ INTEGRATED"
+                fixes_status["Timeout Fix"] = "INTEGRATED"
             else:
-                fixes_status["Timeout Fix"] = "✗ NOT INTEGRATED"
+                fixes_status["Timeout Fix"] = "NOT INTEGRATED"
         else:
-            fixes_status["Timeout Fix"] = "✗ FILE MISSING"
+            fixes_status["Timeout Fix"] = "FILE MISSING"
     except Exception as e:
-        fixes_status["Timeout Fix"] = f"✗ ERROR: {e}"
+        fixes_status["Timeout Fix"] = f"ERROR: {e}"
 
     # 3. PCMSB Excel Path Integration
     try:
         turbo_file = Path("turbopredict.py")
         if turbo_file.exists():
-            content = turbo_file.read_text()
-            if "excel/PCMSB/PCMSB_Automation.xlsx" in content:
-                fixes_status["Excel Path"] = "✓ INTEGRATED"
+            content = turbo_file.read_text(encoding='utf-8', errors='ignore')
+            if "PCMSB_Automation.xlsx" in content:
+                fixes_status["Excel Path"] = "INTEGRATED"
             else:
-                fixes_status["Excel Path"] = "✗ NOT INTEGRATED"
+                fixes_status["Excel Path"] = "NOT INTEGRATED"
         else:
-            fixes_status["Excel Path"] = "✗ FILE MISSING"
+            fixes_status["Excel Path"] = "FILE MISSING"
     except Exception as e:
-        fixes_status["Excel Path"] = f"✗ ERROR: {e}"
+        fixes_status["Excel Path"] = f"ERROR: {e}"
 
     # 4. Dedup Integration
     try:
@@ -81,13 +81,13 @@ def verify_option1_integration():
         if scan_file.exists():
             content = scan_file.read_text()
             if "from .clean import dedup_parquet" in content and "dedup_path = dedup_parquet(" in content:
-                fixes_status["Dedup Creation"] = "✓ INTEGRATED"
+                fixes_status["Dedup Creation"] = "INTEGRATED"
             else:
-                fixes_status["Dedup Creation"] = "✗ NOT INTEGRATED"
+                fixes_status["Dedup Creation"] = "NOT INTEGRATED"
         else:
-            fixes_status["Dedup Creation"] = "✗ FILE MISSING"
+            fixes_status["Dedup Creation"] = "FILE MISSING"
     except Exception as e:
-        fixes_status["Dedup Creation"] = f"✗ ERROR: {e}"
+        fixes_status["Dedup Creation"] = f"ERROR: {e}"
 
     # Display results
     print("PCMSB FIXES INTEGRATION STATUS:")
@@ -113,14 +113,14 @@ def verify_option1_integration():
     for script in separate_scripts:
         script_path = Path(script)
         if script_path.exists():
-            print(f"   ⚠️  {script} - EXISTS (manual script)")
+            print(f"   WARNING {script} - EXISTS (manual script)")
         else:
-            print(f"   ✓ {script} - NOT FOUND (good)")
+            print(f"   OK {script} - NOT FOUND (good)")
 
     print()
 
     # Summary
-    integrated_count = sum(1 for status in fixes_status.values() if "✓ INTEGRATED" in status)
+    integrated_count = sum(1 for status in fixes_status.values() if "INTEGRATED" in status)
     total_fixes = len(fixes_status)
 
     print("INTEGRATION SUMMARY:")
@@ -128,10 +128,10 @@ def verify_option1_integration():
     print(f"Fixes integrated into option [1]: {integrated_count}/{total_fixes}")
 
     if integrated_count == total_fixes:
-        print("✅ ALL PCMSB FIXES ARE INTEGRATED INTO OPTION [1]")
+        print("SUCCESS: ALL PCMSB FIXES ARE INTEGRATED INTO OPTION [1]")
         print("   Option [1] will handle all PCMSB units correctly")
     else:
-        print("⚠️  SOME FIXES ARE NOT INTEGRATED")
+        print("WARNING: SOME FIXES ARE NOT INTEGRATED")
         print("   You may need to run separate scripts for full functionality")
 
     print()
@@ -147,22 +147,22 @@ def verify_option1_integration():
         config = Config()
         scanner = ParquetAutoScanner(config)
 
-        print("✓ ParquetAutoScanner can be imported and initialized")
+        print("OK ParquetAutoScanner can be imported and initialized")
 
         # Check if PCMSB units are recognized
         units = scanner.db.get_all_units()
         pcmsb_units = [unit for unit in units if unit.startswith('C-')]
 
-        print(f"✓ Found {len(pcmsb_units)} PCMSB units in database")
+        print(f"OK Found {len(pcmsb_units)} PCMSB units in database")
 
         if pcmsb_units:
             print(f"   PCMSB units: {pcmsb_units}")
 
-        print("✅ OPTION [1] IS READY FOR PCMSB PROCESSING")
+        print("SUCCESS: OPTION [1] IS READY FOR PCMSB PROCESSING")
 
     except Exception as e:
-        print(f"✗ Error testing option [1]: {e}")
-        print("⚠️  OPTION [1] MAY NOT BE READY")
+        print(f"ERROR testing option [1]: {e}")
+        print("WARNING: OPTION [1] MAY NOT BE READY")
 
 if __name__ == "__main__":
     verify_option1_integration()

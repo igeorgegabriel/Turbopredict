@@ -119,18 +119,25 @@ class SmartAnomalyDetector:
     def _find_speed_sensors(self, df: pd.DataFrame) -> list:
         """Find speed sensor tags"""
         
-        unique_tags = df['tag'].unique()
+        unique_tags = df['tag'].unique() if 'tag' in df.columns else []
         speed_tags = []
         
         for tag in unique_tags:
-            tag_upper = tag.upper()
+            # Guard: some datasets may carry missing or non-string tag ids
+            if not isinstance(tag, str):
+                try:
+                    tag_upper = str(tag).upper()
+                except Exception:
+                    continue
+            else:
+                tag_upper = tag.upper()
             
             # Check for speed patterns
             for pattern in self.speed_patterns:
                 if pattern in tag_upper:
                     # Exclude obvious non-speed tags
                     if not any(exclude in tag_upper for exclude in ['TEMP', 'PRESS', 'FLOW', 'LEVEL', 'VIB']):
-                        speed_tags.append(tag)
+                        speed_tags.append(str(tag))
                         break
                         
         return speed_tags
@@ -283,16 +290,74 @@ def create_smart_detector() -> SmartAnomalyDetector:
     return SmartAnomalyDetector()
 
 
-def smart_anomaly_detection(df: pd.DataFrame, unit: str) -> Dict[str, Any]:
+def smart_anomaly_detection(df: pd.DataFrame, unit: str, auto_plot_anomalies: bool = True) -> Dict[str, Any]:
     """
-    Main entry point for smart anomaly detection
-    
+    Main entry point for smart anomaly detection with automatic anomaly plotting
+
     Args:
         df: DataFrame with time series data
         unit: Unit identifier
-        
+        auto_plot_anomalies: If True, automatically generate 3-month plots for verified anomalies
+
     Returns:
         Smart anomaly detection results with unit status awareness
     """
+    # PERFORMANCE FIX: Use direct hybrid detection (2.5σ + MTD + IF) without speed compensation
+    # Speed-aware path is disabled due to performance issues with large datasets (>1M records)
+    logger.info(f"Using hybrid anomaly detection (2.5σ + MTD + IF) for unit {unit}")
+
+    # Use original smart detection (which calls hybrid internally)
     detector = create_smart_detector()
-    return detector.analyze_with_status_check(df, unit)
+    results = detector.analyze_with_status_check(df, unit)
+
+    # Auto-trigger plotting for verified anomalies
+    if auto_plot_anomalies and results.get('by_tag'):
+        try:
+            from .anomaly_triggered_plots import generate_anomaly_plots
+
+            # Check if any anomalies are verified (meet the detection pipeline criteria)
+            verified_count = 0
+            by_tag = results.get('by_tag', {})
+
+            for tag, tag_info in by_tag.items():
+                # Check verification criteria (same as in anomaly_triggered_plots.py)
+                sigma_count = tag_info.get('sigma_2_5_count', 0)
+                ae_count = tag_info.get('autoencoder_count', 0)
+                mtd_count = tag_info.get('mtd_count', 0)
+                iso_count = tag_info.get('isolation_forest_count', 0)
+                confidence = tag_info.get('confidence', 'LOW')
+
+                # Primary detection + verification + confidence
+                primary_detected = sigma_count > 0 or ae_count > 0
+                verification_detected = mtd_count > 0 or iso_count > 0
+                high_confidence = confidence in ['HIGH', 'MEDIUM']
+
+                if primary_detected and verification_detected and high_confidence:
+                    verified_count += 1
+
+            # Trigger plotting if verified anomalies found
+            if verified_count > 0:
+                logger.info(f"Detected {verified_count} verified anomalies in {unit} - triggering 3-month diagnostic plots")
+
+                # Prepare detection results in the format expected by the plotter
+                detection_results = {unit: results}
+
+                # Generate anomaly-triggered plots
+                plot_session_dir = generate_anomaly_plots(detection_results)
+
+                # Add plotting info to results
+                results['anomaly_plots_generated'] = True
+                results['plot_session_dir'] = str(plot_session_dir)
+                results['verified_anomalies_count'] = verified_count
+
+                logger.info(f"Anomaly diagnostic plots generated: {plot_session_dir}")
+            else:
+                results['anomaly_plots_generated'] = False
+                results['verified_anomalies_count'] = 0
+
+        except Exception as e:
+            logger.error(f"Error in automatic anomaly plotting: {e}")
+            results['anomaly_plots_generated'] = False
+            results['plot_error'] = str(e)
+
+    return results

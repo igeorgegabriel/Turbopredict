@@ -855,10 +855,10 @@ $s.Save()
                 print("Using plant-specific PI DataLink files for each unit")
                 print("Starting unit-by-unit progress tracking...")
             
-            # Use the new progress tracking system
-            from pi_monitor.parquet_auto_scan import ParquetAutoScanner
-            scanner = ParquetAutoScanner()
-            
+            # Use the existing scanner instance (already initialized)
+            # This ensures we use the same configuration and state
+            scanner = self.scanner
+
             # Call the progress tracking refresh method
             # Use provided threshold or configuration/env fallback
             if max_age_hours is None:

@@ -199,7 +199,7 @@ class TurbopredictSystem:
                 menu_options = [
                     ("1", "INCREMENTAL REFRESH", "All plants (PCFS/ABF/PCMSB, no gaps)"),
                     ("2", "UNIT DEEP ANALYSIS", "Smart anomaly detection with auto-triggered plots"),
-                    ("3", "SCHEDULED TASK MANAGER", "Manage hourly background service (works when locked)"),
+                    ("3", "CONTINUOUS LOOP [1]→[2]", "Run Option [1] then [2] endlessly (CTRL+C to stop)"),
                     ("4", "DATA HEALTH CHECK", "Check unit data freshness & quality"),
                     ("5", "UNIT DATA ANALYSIS", "Detailed unit statistics & comparison"),
                     ("6", "UNIT EXPLORER", "Browse and explore all units"),
@@ -251,7 +251,7 @@ class TurbopredictSystem:
 +================================================================+
 | 1. INCREMENTAL REFRESH  - All plants (PCFS/ABF/PCMSB)        |
 | 2. UNIT DEEP ANALYSIS   - Smart anomaly detection + plots    |
-| 3. SCHEDULED TASK MGR   - Hourly background (works locked)   |
+| 3. CONTINUOUS LOOP      - Run [1]→[2] endlessly (CTRL+C)     |
 | 4. DATA HEALTH CHECK    - Check unit data freshness/quality  |
 | 5. UNIT DATA ANALYSIS   - Detailed statistics & comparison   |
 | 6. UNIT EXPLORER        - Browse all available units         |
@@ -677,15 +677,128 @@ $s.Save()
             print(f"  - {service_log}")
 
     def run_hourly_auto_loop(self, interval_hours: float = 1.0):
-        """Manage Windows Scheduled Task for reliable hourly analysis.
+        """Run continuous loop: Option [1] -> Option [2] -> repeat forever.
 
-        This replaces the old loop that didn't work when laptop was locked.
-        Now uses Windows Task Scheduler to run even when locked/sleeping.
+        Simple endless loop with memory cleanup between cycles.
+        Press CTRL+C to stop.
         """
         if not self._check_data_available():
             return
 
-        # Check scheduled task status
+        if COLORAMA_AVAILABLE:
+            print(Fore.GREEN + "=" * 80)
+            print("     CONTINUOUS AUTO-REFRESH LOOP")
+            print("=" * 80 + Style.RESET_ALL)
+            print(Fore.CYAN + "This will run Option [1] then Option [2] in endless loop" + Style.RESET_ALL)
+            print(Fore.YELLOW + "Press CTRL+C to stop" + Style.RESET_ALL)
+        else:
+            print("=" * 80)
+            print("     CONTINUOUS AUTO-REFRESH LOOP")
+            print("=" * 80)
+            print("This will run Option [1] then Option [2] in endless loop")
+            print("Press CTRL+C to stop")
+
+        input("\nPress Enter to start continuous loop...")
+
+        cycle_count = 0
+        start_time = datetime.now()
+
+        try:
+            while True:
+                cycle_count += 1
+                cycle_start = datetime.now()
+
+                if COLORAMA_AVAILABLE:
+                    print(Fore.GREEN + "\n" + "=" * 80)
+                    print(f"     CYCLE #{cycle_count} - {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print("=" * 80 + Style.RESET_ALL)
+                else:
+                    print("\n" + "=" * 80)
+                    print(f"     CYCLE #{cycle_count} - {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print("=" * 80)
+
+                # Step 1: Run Option [1] - Auto-Refresh Scan
+                if COLORAMA_AVAILABLE:
+                    print(Fore.CYAN + "\n>>> STEP 1/2: AUTO-REFRESH SCAN <<<" + Style.RESET_ALL)
+                else:
+                    print("\n>>> STEP 1/2: AUTO-REFRESH SCAN <<<")
+
+                try:
+                    self.run_real_data_scanner(auto_refresh=True)
+                except Exception as e:
+                    if COLORAMA_AVAILABLE:
+                        print(Fore.RED + f"[ERROR] Option [1] failed: {e}" + Style.RESET_ALL)
+                    else:
+                        print(f"[ERROR] Option [1] failed: {e}")
+                    logger.exception("Option [1] failed in continuous loop")
+
+                # Step 2: Run Option [2] - Unit Deep Analysis
+                if COLORAMA_AVAILABLE:
+                    print(Fore.CYAN + "\n>>> STEP 2/2: UNIT DEEP ANALYSIS <<<" + Style.RESET_ALL)
+                else:
+                    print("\n>>> STEP 2/2: UNIT DEEP ANALYSIS <<<")
+
+                try:
+                    self.run_unit_analysis()
+                except Exception as e:
+                    if COLORAMA_AVAILABLE:
+                        print(Fore.RED + f"[ERROR] Option [2] failed: {e}" + Style.RESET_ALL)
+                    else:
+                        print(f"[ERROR] Option [2] failed: {e}")
+                    logger.exception("Option [2] failed in continuous loop")
+
+                # Memory cleanup
+                try:
+                    import gc
+                    gc.collect()
+                except:
+                    pass
+
+                # Cycle summary
+                cycle_end = datetime.now()
+                cycle_duration = (cycle_end - cycle_start).total_seconds()
+                total_runtime = (cycle_end - start_time).total_seconds()
+
+                if COLORAMA_AVAILABLE:
+                    print(Fore.GREEN + "\n" + "=" * 80)
+                    print(f"     CYCLE #{cycle_count} COMPLETE")
+                    print("=" * 80 + Style.RESET_ALL)
+                    print(Fore.YELLOW + f"  Cycle Duration: {cycle_duration:.1f}s" + Style.RESET_ALL)
+                    print(Fore.YELLOW + f"  Total Runtime: {total_runtime/60:.1f} minutes" + Style.RESET_ALL)
+                    print(Fore.YELLOW + f"  Total Cycles: {cycle_count}" + Style.RESET_ALL)
+                    print(Fore.CYAN + "\n  Starting next cycle..." + Style.RESET_ALL)
+                else:
+                    print("\n" + "=" * 80)
+                    print(f"     CYCLE #{cycle_count} COMPLETE")
+                    print("=" * 80)
+                    print(f"  Cycle Duration: {cycle_duration:.1f}s")
+                    print(f"  Total Runtime: {total_runtime/60:.1f} minutes")
+                    print(f"  Total Cycles: {cycle_count}")
+                    print("\n  Starting next cycle...")
+
+                # Small delay between cycles
+                time.sleep(2)
+
+        except KeyboardInterrupt:
+            if COLORAMA_AVAILABLE:
+                print(Fore.YELLOW + "\n\n[STOPPED] Continuous loop stopped by user (CTRL+C)" + Style.RESET_ALL)
+                print(Fore.GREEN + f"  Total cycles completed: {cycle_count}" + Style.RESET_ALL)
+                print(Fore.GREEN + f"  Total runtime: {(datetime.now() - start_time).total_seconds()/60:.1f} minutes" + Style.RESET_ALL)
+            else:
+                print("\n\n[STOPPED] Continuous loop stopped by user (CTRL+C)")
+                print(f"  Total cycles completed: {cycle_count}")
+                print(f"  Total runtime: {(datetime.now() - start_time).total_seconds()/60:.1f} minutes")
+
+            input("\nPress Enter to return to main menu...")
+        except Exception as e:
+            if COLORAMA_AVAILABLE:
+                print(Fore.RED + f"\n[ERROR] Continuous loop crashed: {e}" + Style.RESET_ALL)
+            else:
+                print(f"\n[ERROR] Continuous loop crashed: {e}")
+            logger.exception("Continuous loop crashed")
+            input("\nPress Enter to return to main menu...")
+
+        # Old code below is no longer used
         status = self._check_scheduled_task_status()
 
         if COLORAMA_AVAILABLE:

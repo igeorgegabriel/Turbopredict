@@ -747,11 +747,24 @@ $s.Save()
                         print(f"[ERROR] Option [2] failed: {e}")
                     logger.exception("Option [2] failed in continuous loop")
 
-                # Memory cleanup
+                # Memory and Excel cleanup
                 try:
                     import gc
                     gc.collect()
                 except:
+                    pass
+
+                # Force close any lingering Excel instances
+                try:
+                    import subprocess
+                    subprocess.run(["taskkill", "/F", "/IM", "EXCEL.EXE", "/T"],
+                                 capture_output=True, timeout=5)
+                    if COLORAMA_AVAILABLE:
+                        print(Fore.YELLOW + "  [Cleanup] Closed Excel instances" + Style.RESET_ALL)
+                    else:
+                        print("  [Cleanup] Closed Excel instances")
+                except Exception as cleanup_err:
+                    # Excel might not be running - that's OK
                     pass
 
                 # Cycle summary

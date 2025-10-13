@@ -1,0 +1,39 @@
+# Configuration for K-12-01 unit
+unit_id: "K-12-01"
+plant: "PCFS"
+description: "Process Control Unit K-12-01"
+
+# Data settings
+data:
+  parquet_file: "K-12-01_1y_0p1h.parquet"
+  excel_file: "PCFS_Automation.xlsx"
+  sheet_name: "DL_WORK"
+  max_age_hours: 1.0
+
+# Processing settings
+processing:
+  memory_limit_gb: 2.0
+  chunk_size: 250000
+  enable_deduplication: true
+  enable_anomaly_detection: true
+
+# Monitoring settings
+monitoring:
+  health_check_interval: 30
+  metrics_port: 9000
+  log_level: "INFO"
+
+# Container settings
+container:
+  restart_policy: "unless-stopped"
+  cpu_limit: 1.0
+  memory_limit: "2GB"
+
+# Tags specific to this unit (if any)
+specific_tags: []
+
+# Excel automation settings
+excel:
+  timeout_seconds: 300
+  calculation_mode: "full"
+  save_strategy: "working_copy"

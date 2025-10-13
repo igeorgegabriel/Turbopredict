@@ -1,11 +1,32 @@
 #!/usr/bin/env python3
 """
-Final anomaly plotting with proper folder structure:
-reports/YYYY-MM-DD_Analysis/HH-MM-SS_PlottingTime/[Units]
+⛔ DISABLED - Extended Analysis Plotting System
+This script has been replaced by anomaly-triggered plotting system.
+Use: python turbopredict.py → Option [2] for anomaly detection with automatic plotting.
+
+OLD: Generated SMART_ANALYSIS.png for all tags (noisy, redundant)
+NEW: Generates ANOMALY_*.png only for recent (<24h) verified anomalies (focused, actionable)
 """
 
-import os
 import sys
+print("="*80)
+print("[DISABLED] ERROR: This script has been DISABLED")
+print("="*80)
+print("\nThis extended analysis plotting system has been replaced.")
+print("\nPlease use the anomaly-triggered plotting system instead:")
+print("  python turbopredict.py")
+print("  Select Option [2]: ANALYZE ALL UNITS")
+print("\nNew system generates plots only for:")
+print("  - Recent anomalies (<24 hours old)")
+print("  - CRITICAL and HIGH priority only")
+print("  - Verified by detection pipeline")
+print("  - Automatic PDF compilation")
+print("="*80)
+sys.exit(1)
+
+# Old code disabled below
+import os_DISABLED
+import sys_DISABLED
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np

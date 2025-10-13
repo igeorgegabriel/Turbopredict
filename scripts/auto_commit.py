@@ -50,11 +50,7 @@ def commit_and_push():
     # Create commit message
     commit_msg = f"""Hourly auto-commit: {timestamp}
 
-Automated backup of TURBOPREDICT X PROTEAN system changes.
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>"""
+Automated backup of TURBOPREDICT X PROTEAN system changes."""
 
     # Commit changes
     success, stdout, stderr = run_command(f'git commit -m "{commit_msg}"')

@@ -10,6 +10,7 @@ import numpy as np
 from datetime import datetime, timedelta
 from pathlib import Path
 import glob
+from pi_monitor.plot_controls import build_scan_root_dir, ensure_unit_dir
 
 def create_unit_organized_plots():
     """Create plots organized by unit"""
@@ -21,10 +22,8 @@ def create_unit_organized_plots():
     plt.style.use('default')
     plt.rcParams['figure.figsize'] = (14, 8)
     
-    # Create main output directory
-    reports_dir = Path("C:/Users/george.gabrielujai/Documents/CodeX/reports")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    main_output_dir = reports_dir / f"unit_anomaly_plots_{timestamp}"
+    # Create master folder named by day/time of scanning
+    main_output_dir = build_scan_root_dir(Path("reports"))
     main_output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"Main output directory: {main_output_dir}")
@@ -39,8 +38,7 @@ def create_unit_organized_plots():
         print(f"\nProcessing Unit: {unit}")
         
         # Create unit directory
-        unit_dir = main_output_dir / unit
-        unit_dir.mkdir(exist_ok=True)
+        unit_dir = ensure_unit_dir(main_output_dir, unit)
         
         # Find parquet files for this unit
         unit_files = glob.glob(f"data/processed/*{unit}*.parquet")

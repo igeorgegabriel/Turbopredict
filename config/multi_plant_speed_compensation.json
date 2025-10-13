@@ -1,0 +1,246 @@
+{
+  "config_type": "multi_plant_speed_compensation",
+  "generated_at": "2025-09-28T08:30:00",
+  "purpose": "Speed compensation for abnormal behavior detection across all plants",
+  "target_analysis": "option_2_precise_analysis",
+  "description": "Comprehensive speed compensation configuration for PCFS, ABF, and PCMSB plants",
+
+  "plants_analyzed": {
+    "PCFS": {
+      "status": "full_speed_compensation_available",
+      "units": 4,
+      "speed_tags_found": 6,
+      "data_quality": "excellent"
+    },
+    "ABF": {
+      "status": "speed_indicators_verified_with_data",
+      "units": 1,
+      "speed_tags_found": 2,
+      "data_quality": "excellent",
+      "note": "Speed indicators verified: SI-07002D_new (10,673 RPM avg), SI-07002MV_new (72% avg)"
+    },
+    "PCMSB": {
+      "status": "complete_multi_unit_speed_compensation",
+      "units": 7,
+      "speed_tags_found": 10,
+      "data_quality": "excellent",
+      "note": "All units have speed indicators: C-104 (1), C-201 (1), C-202 (3), C-1301 (1), C-1302 (1), C-02001 (1), C-13001 (1)"
+    },
+    "XT": {
+      "status": "complete_speed_compensation_with_multi_validation",
+      "units": 1,
+      "speed_tags_found": 3,
+      "data_quality": "excellent",
+      "note": "XT-07002 unit has 3 speed indicators with cross-validation capability"
+    }
+  },
+
+  "speed_compensation_by_plant": {
+    "PCFS": {
+      "compensation_method": "true_speed_indicator_compensation",
+      "units": {
+        "K-12-01": {
+          "primary_speed_tag": "PCFS_K-12-01_12SI-401B_PV",
+          "compensation_type": "speed_indicator",
+          "baseline_speed": 5500.0,
+          "expected_range": "4996-6042 RPM",
+          "compensation_confidence": "high",
+          "data_verified": true
+        },
+        "K-16-01": {
+          "primary_speed_tag": "PCFS_K-16-01_16SI-501B_PV",
+          "compensation_type": "speed_indicator",
+          "baseline_speed": 5000.0,
+          "expected_range": "0-10031 RPM",
+          "compensation_confidence": "high",
+          "data_verified": true
+        },
+        "K-19-01": {
+          "primary_speed_tag": "PCFS_K-19-01_19SI-601B_PV",
+          "compensation_type": "speed_indicator",
+          "baseline_speed": 5000.0,
+          "expected_range": "0-10021 RPM",
+          "compensation_confidence": "high",
+          "data_verified": true
+        },
+        "K-31-01": {
+          "primary_speed_tag": "PCFS_K-31-01_31SI-301B_PV",
+          "secondary_speed_tags": [
+            "PCFS_K-31-01_31SIA-306_PV",
+            "PCFS_K-31-01_31SIA-307_PV"
+          ],
+          "compensation_type": "multi_speed_indicator",
+          "baseline_speed": 3400.0,
+          "expected_range": "0-6793 RPM",
+          "compensation_confidence": "excellent",
+          "data_verified": true
+        }
+      }
+    },
+
+    "ABF": {
+      "compensation_method": "dual_speed_indicator_compensation",
+      "units": {
+        "07-MT001": {
+          "primary_speed_tag": "ABF_07-MT001_SI-07002D_new_PV",
+          "secondary_speed_tag": "ABF_07-MT001_SI-07002MV_new_PV",
+          "compensation_type": "dual_speed_indicator",
+          "baseline_speed": 10673.53,
+          "secondary_baseline": 71.96,
+          "expected_range": "0-12228 RPM (primary), 0-85% (secondary)",
+          "data_verified": true,
+          "data_points": 92411,
+          "backup_tags": [
+            "ABF_07-MT001_FI-07054_PV",
+            "ABF_07-MT001_FI-07001_PV"
+          ],
+          "compensation_confidence": "excellent",
+          "note": "Dual speed indicators verified with 92k data points each"
+        }
+      }
+    },
+
+    "PCMSB": {
+      "compensation_method": "multi_unit_speed_compensation",
+      "units": {
+        "C-104": {
+          "primary_speed_tag": "PCM_C-104_SIALH-1451_PV",
+          "compensation_type": "speed_indicator_rpm",
+          "baseline_speed": 9817.48,
+          "expected_range": "0-14073 RPM",
+          "data_verified": true,
+          "data_points": 87601,
+          "compensation_confidence": "high"
+        },
+        "C-201": {
+          "primary_speed_tag": "PCM_C-201_SI-2151_PV",
+          "compensation_type": "speed_indicator_rpm",
+          "baseline_speed": 9001.99,
+          "expected_range": "0-9356 RPM",
+          "data_verified": true,
+          "data_points": 87601,
+          "compensation_confidence": "high"
+        },
+        "C-202": {
+          "primary_speed_tag": "PCM_C-202_SIALH-2251_PV",
+          "secondary_speed_tags": [
+            "PCM_C-202_SIC-2252-SP_PV",
+            "PCM_C-202_SIC-2252-MV_PV"
+          ],
+          "compensation_type": "multi_speed_indicator",
+          "baseline_speed": 8192.98,
+          "expected_range": "0-8571 RPM",
+          "data_verified": true,
+          "data_points": 87601,
+          "compensation_confidence": "excellent"
+        },
+        "C-1301": {
+          "primary_speed_tag": "PCM_C-1301_SIC13201OFB_PV",
+          "compensation_type": "control_percentage",
+          "baseline_value": 83.3,
+          "expected_range": "1.6-99.9 %",
+          "data_verified": true,
+          "data_points": 87601,
+          "compensation_confidence": "high"
+        }
+      }
+    }
+  },
+
+  "compensation_strategies": {
+    "PCFS": {
+      "method": "speed_indicator_normalized_analysis",
+      "formula": "normalized_value = actual_value * (baseline_speed / current_speed)",
+      "threshold_adjustment": "speed_adaptive",
+      "quality": "industrial_grade"
+    },
+
+    "ABF": {
+      "method": "dual_speed_indicator_normalized_analysis",
+      "formula": "normalized_value = actual_value * (10673.53 / current_speed)",
+      "cross_validation": "validate_primary_RPM_with_secondary_percentage",
+      "threshold_adjustment": "dual_speed_adaptive",
+      "quality": "industrial_grade"
+    },
+
+    "PCMSB": {
+      "method": "rpm_based_normalized_analysis",
+      "formula": "normalized_value = actual_value * (9817.48 / current_rpm)",
+      "threshold_adjustment": "rpm_adaptive",
+      "quality": "industrial_grade"
+    }
+  },
+
+  "option_2_integration": {
+    "implementation_priority": {
+      "phase_1": "PCFS (complete speed compensation)",
+      "phase_2": "ABF (flow-based compensation)",
+      "phase_3": "PCMSB (basic process compensation)"
+    },
+
+    "analysis_approach": {
+      "PCFS": {
+        "enable_full_speed_compensation": true,
+        "use_multi_speed_validation": true,
+        "anomaly_detection_precision": "highest"
+      },
+      "ABF": {
+        "enable_dual_speed_compensation": true,
+        "data_collection_complete": true,
+        "anomaly_detection_precision": "high"
+      },
+      "PCMSB": {
+        "enable_rpm_speed_compensation": true,
+        "anomaly_detection_precision": "high"
+      }
+    },
+
+    "cross_plant_analysis": {
+      "enable": true,
+      "method": "plant_specific_normalization",
+      "comparison_basis": "each_plant_has_own_baseline",
+      "benefits": "Enables cross-plant anomaly pattern recognition"
+    }
+  },
+
+  "data_availability_summary": {
+    "PCFS": {
+      "speed_tags": 6,
+      "total_data_points": 29760,
+      "files_available": 130,
+      "compensation_ready": true
+    },
+    "ABF": {
+      "speed_tags": 2,
+      "total_data_points": 184822,
+      "files_available": "parquet_verified",
+      "compensation_ready": true
+    },
+    "PCMSB": {
+      "speed_tags": 6,
+      "total_data_points": 350404,
+      "files_available": "parquet_verified",
+      "compensation_ready": true
+    }
+  },
+
+  "recommendations": {
+    "immediate_implementation": [
+      "Deploy PCFS speed compensation immediately (highest confidence)",
+      "Use PCFS as primary plant for Option [2] precise analysis",
+      "Implement ABF flow compensation as secondary priority"
+    ],
+    "future_improvements": [
+      "Identify speed indicators in ABF plant if available",
+      "Expand PCMSB data collection for better compensation",
+      "Consider cross-plant anomaly correlation analysis"
+    ],
+    "compensation_confidence_ranking": [
+      "1. PCMSB C-202 (3 speed tags with cross-validation - excellent)",
+      "2. PCFS K-31-01 (3 speed tags - excellent)",
+      "3. ABF 07-MT001 (2 speed tags with 92k data points - excellent)",
+      "4. PCFS K-12-01, K-16-01, K-19-01 (1 speed tag each - high)",
+      "5. PCMSB C-104, C-201, C-1301 (1 speed tag each with 87k data points - high)"
+    ]
+  }
+}

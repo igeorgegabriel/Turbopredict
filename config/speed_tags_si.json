@@ -1,0 +1,151 @@
+{
+  "config_type": "speed_indicator_tags",
+  "generated_at": "2025-09-28T08:10:00",
+  "purpose": "Speed Indicator (SI) tags for precise abnormal behavior compensation",
+  "target_analysis": "option_2_precise_analysis",
+  "description": "Actual speed indicator tags found in industrial system",
+
+  "speed_indicator_tags": {
+    "K-12-01": {
+      "primary_speed_tag": "PCFS_K-12-01_12SI-401B_PV",
+      "tag_type": "speed_indicator",
+      "expected_units": "RPM or Hz",
+      "compensation_ready": true,
+      "backup_tags": [
+        "PCFS_K-12-01_12FHC-004_MV"
+      ]
+    },
+
+    "K-16-01": {
+      "primary_speed_tag": "PCFS_K-16-01_16SI-501B_PV",
+      "tag_type": "speed_indicator",
+      "expected_units": "RPM or Hz",
+      "compensation_ready": true,
+      "backup_tags": [
+        "PCFS_K-16-01_16FHC-005_MV"
+      ]
+    },
+
+    "K-19-01": {
+      "primary_speed_tag": "PCFS_K-19-01_19SI-601B_PV",
+      "tag_type": "speed_indicator",
+      "expected_units": "RPM or Hz",
+      "compensation_ready": true,
+      "backup_tags": [
+        "PCFS_K-19-01_19FHC-008_MV"
+      ]
+    },
+
+    "K-31-01": {
+      "primary_speed_tag": "PCFS_K-31-01_31SI-301B_PV",
+      "secondary_speed_tags": [
+        "PCFS_K-31-01_31SIA-306_PV",
+        "PCFS_K-31-01_31SIA-307_PV"
+      ],
+      "tag_type": "speed_indicator",
+      "expected_units": "RPM or Hz",
+      "compensation_ready": true,
+      "backup_tags": [
+        "PCFS_K-31-01_31FHC-002_MV"
+      ]
+    }
+  },
+
+  "speed_compensation_strategy": {
+    "K-12-01": {
+      "method": "speed_indicator_normalized_analysis",
+      "baseline_speed": "dynamic_from_historical_data",
+      "compensation_formula": "normalized_value = actual_value * (baseline_speed / current_speed)",
+      "abnormal_threshold_adjustment": "speed_adaptive"
+    },
+
+    "K-16-01": {
+      "method": "speed_indicator_normalized_analysis",
+      "baseline_speed": "dynamic_from_historical_data",
+      "compensation_formula": "normalized_value = actual_value * (baseline_speed / current_speed)",
+      "abnormal_threshold_adjustment": "speed_adaptive"
+    },
+
+    "K-19-01": {
+      "method": "speed_indicator_normalized_analysis",
+      "baseline_speed": "dynamic_from_historical_data",
+      "compensation_formula": "normalized_value = actual_value * (baseline_speed / current_speed)",
+      "abnormal_threshold_adjustment": "speed_adaptive"
+    },
+
+    "K-31-01": {
+      "method": "multi_speed_indicator_analysis",
+      "primary_baseline": "PCFS_K-31-01_31SI-301B_PV",
+      "cross_validation": "use_SIA-306_and_SIA-307_for_validation",
+      "compensation_formula": "normalized_value = actual_value * (baseline_speed / primary_speed)",
+      "abnormal_threshold_adjustment": "multi_speed_adaptive"
+    }
+  },
+
+  "analysis_recommendations": {
+    "K-12-01": {
+      "enable_speed_compensation": true,
+      "monitor_speed_stability": true,
+      "speed_change_threshold": 0.10,
+      "compensation_confidence": "high"
+    },
+
+    "K-16-01": {
+      "enable_speed_compensation": true,
+      "monitor_speed_stability": true,
+      "speed_change_threshold": 0.10,
+      "compensation_confidence": "high"
+    },
+
+    "K-19-01": {
+      "enable_speed_compensation": true,
+      "monitor_speed_stability": true,
+      "speed_change_threshold": 0.10,
+      "compensation_confidence": "high"
+    },
+
+    "K-31-01": {
+      "enable_speed_compensation": true,
+      "monitor_speed_stability": true,
+      "speed_change_threshold": 0.08,
+      "compensation_confidence": "excellent",
+      "multi_speed_validation": true
+    }
+  },
+
+  "option_2_integration": {
+    "description": "Speed Indicator integration for TurboPredict Option [2] precise analysis",
+    "compensation_method": "true_speed_normalization",
+    "implementation": {
+      "step_1": "Read current speed from SI tags",
+      "step_2": "Calculate baseline speed from historical data",
+      "step_3": "Apply speed normalization: normalized_value = actual_value * (baseline/current)",
+      "step_4": "Use speed-normalized values for abnormal behavior detection",
+      "step_5": "Adjust anomaly thresholds based on speed variations"
+    },
+    "benefits": [
+      "True speed compensation using actual speed indicators",
+      "Eliminates speed-related false positives in anomaly detection",
+      "Provides equipment-speed-normalized baselines",
+      "Enables precise analysis across all operating speeds",
+      "K-31-01 has multiple speed validation for highest accuracy"
+    ]
+  },
+
+  "tag_analysis": {
+    "SI_tag_meaning": "Speed Indicator - actual equipment speed measurement",
+    "SIA_tag_meaning": "Speed Indicator Analog - analog speed measurement",
+    "typical_ranges": {
+      "motor_speeds": "0-3600 RPM typical",
+      "drive_frequencies": "0-60 Hz typical",
+      "pump_speeds": "0-1800 RPM typical"
+    },
+    "validation": "Compare with flow rates and pressure readings for consistency"
+  },
+
+  "implementation_priority": {
+    "highest": "K-31-01 (3 speed tags available)",
+    "high": "K-12-01, K-16-01, K-19-01 (1 speed tag each)",
+    "recommendation": "Implement K-31-01 first for testing, then roll out to other units"
+  }
+}

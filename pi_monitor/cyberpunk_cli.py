@@ -1,5 +1,5 @@
 """
-TURBOPREDICT X PROTEAN - Cyberpunk CLI Interface
+TURBOPREDICT - Cyberpunk CLI Interface
 Beautiful terminal interface with cyberpunk aesthetic
 """
 
@@ -69,20 +69,6 @@ class CyberpunkTheme:
 ║     ██║   ╚██████╔╝██║  ██║██████╔╝╚██████╔╝██║     ██║  ██║███████╗ ║
 ║     ╚═╝    ╚═════╝ ╚═╝  ╚═╝╚═════╝  ╚═════╝ ╚═╝     ╚═╝  ╚═╝╚══════╝ ║
 ║                                                                      ║
-║         ██████╗ ██████╗ ███████╗██████╗ ██╗ ██████╗████████╗         ║
-║         ██╔══██╗██╔══██╗██╔════╝██╔══██╗██║██╔════╝╚══██╔══╝         ║
-║         ██████╔╝██████╔╝█████╗  ██║  ██║██║██║        ██║            ║
-║         ██╔═══╝ ██╔══██╗██╔══╝  ██║  ██║██║██║        ██║            ║
-║         ██║     ██║  ██║███████╗██████╔╝██║╚██████╗   ██║            ║
-║         ╚═╝     ╚═╝  ╚═╝╚══════╝╚═════╝ ╚═╝ ╚═════╝   ╚═╝            ║
-║                                                                      ║
-║                    ██╗  ██╗    ██████╗ ██████╗  ██████╗ ████████╗   ║
-║                    ╚██╗██╔╝    ██╔══██╗██╔══██╗██╔═══██╗╚══██╔══╝   ║
-║                     ╚███╔╝     ██████╔╝██████╔╝██║   ██║   ██║      ║
-║                     ██╔██╗     ██╔═══╝ ██╔══██╗██║   ██║   ██║      ║
-║                    ██╔╝ ██╗    ██║     ██║  ██║╚██████╔╝   ██║      ║
-║                    ╚═╝  ╚═╝    ╚═╝     ╚═╝  ╚═╝ ╚═════╝    ╚═╝      ║
-║                                                                      ║
 ║                      █▀▀ █▄█ █▄▄ █▀▀ █▀█ █▀█ █░█ █▄░█ █▄▀           ║
 ║                      █▄▄ ░█░ █▄█ ██▄ █▀▄ █▀▀ █▄█ █░▀█ █░█           ║
 ║                                                                      ║
@@ -91,7 +77,7 @@ class CyberpunkTheme:
 """
 
 class CyberpunkCLI:
-    """Beautiful cyberpunk-themed CLI for TURBOPREDICT X PROTEAN"""
+    """Beautiful cyberpunk-themed CLI for TURBOPREDICT"""
     
     def __init__(self):
         self.console = Console() if RICH_AVAILABLE else None
@@ -145,10 +131,10 @@ class CyberpunkCLI:
         """Fallback banner for systems without rich"""
         if COLORAMA_AVAILABLE:
             print(Fore.CYAN + Style.BRIGHT + self.theme.get_banner())
-            print(Fore.GREEN + "=== TURBOPREDICT X PROTEAN - CYBERPUNK INTERFACE ===" + Style.RESET_ALL)
+            print(Fore.GREEN + "=== TURBOPREDICT - CYBERPUNK INTERFACE ===" + Style.RESET_ALL)
         else:
             print(self.theme.get_banner())
-            print("=== TURBOPREDICT X PROTEAN - CYBERPUNK INTERFACE ===")
+            print("=== TURBOPREDICT - CYBERPUNK INTERFACE ===")
     
     def show_main_menu(self) -> str:
         """Display main menu and get user choice"""
@@ -197,7 +183,7 @@ class CyberpunkCLI:
         """Fallback menu for systems without rich"""
         menu_text = """
 ╔════════════════════════════════════════╗
-║        TURBOPREDICT X PROTEAN          ║
+║           TURBOPREDICT                 ║
 ║           COMMAND MATRIX               ║
 ╠════════════════════════════════════════╣
 ║ 1. AUTO-SCAN       - Smart PI Scanning║

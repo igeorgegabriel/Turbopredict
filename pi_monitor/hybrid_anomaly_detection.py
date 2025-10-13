@@ -85,26 +85,82 @@ def _load_baseline_thresholds(unit: Optional[str]) -> Dict[str, Dict[str, float]
     return thresholds
 
 
+def _detect_running_state(df: pd.DataFrame, speed_threshold: float = 1.0) -> pd.Series:
+    """Detect when equipment is running vs shutdown.
+
+    Args:
+        df: DataFrame with 'tag' and 'value' columns
+        speed_threshold: Minimum value to consider equipment running
+
+    Returns:
+        Boolean series indicating running state for each row
+    """
+    # Identify speed/flow sensors that indicate equipment operation
+    speed_patterns = ['SI', 'SIA', 'SPEED', 'RPM', 'FI', 'FLOW']
+
+    # Find speed-related tags
+    speed_tags = []
+    for tag in df['tag'].unique():
+        if not isinstance(tag, str):
+            continue
+        tag_upper = tag.upper()
+        if any(pattern in tag_upper for pattern in speed_patterns):
+            speed_tags.append(tag)
+
+    # If we have speed sensors, use them to determine running state
+    if speed_tags:
+        speed_data = df[df['tag'].isin(speed_tags)].copy()
+        if not speed_data.empty:
+            # Group by time and check if any speed sensor shows running
+            running_times = speed_data[speed_data['value'] > speed_threshold]['time'].unique()
+            return df['time'].isin(running_times)
+
+    # Fallback: use per-tag thresholds (assume running if value > 10% of max)
+    running_mask = pd.Series([True] * len(df), index=df.index)
+    for tag in df['tag'].unique():
+        tag_mask = df['tag'] == tag
+        tag_data = df[tag_mask]['value']
+
+        # Calculate tag-specific threshold (10% of operating range)
+        tag_max = tag_data.max()
+        tag_min = tag_data.min()
+        tag_range = tag_max - tag_min
+
+        if tag_range > 1.0:  # Only filter if there's significant range
+            threshold = tag_min + (0.1 * tag_range)
+            running_mask = running_mask | ((df['tag'] == tag) & (df['value'] > threshold))
+
+    return running_mask
+
+
 def _sigma_2p5_candidates(df: pd.DataFrame) -> Tuple[Set[pd.Timestamp], Dict[str, Any], Dict[str, Set[pd.Timestamp]]]:
     """Compute 2.5-sigma candidates per tag.
+
+    PERFORMANCE FIX: Shutdown detection disabled - caused false positives and messy charts.
+    Now analyzes all data without filtering shutdown/startup periods.
 
     Returns (candidate_times, summary_by_tag, times_by_tag)
     where times_by_tag maps each tag to the set of candidate timestamps.
     """
     if df.empty or 'tag' not in df.columns or 'value' not in df.columns:
-        return set(), {}
+        return set(), {}, {}
 
     # Compute per-tag mean and std
     try:
         grouped = df[['tag', 'value', 'time']].dropna(subset=['value'])
         # Ensure datetime for accurate set operations later
         grouped = _ensure_datetime(grouped)
-        # Using groupby to compute mean/std
-        stats = grouped.groupby('tag')['value'].agg(['mean', 'std'])
+
+        # SHUTDOWN DETECTION DISABLED - was causing false positives
+        # Use all data for cleaner, more accurate detection
+        grouped_running = grouped.copy()
+
+        # Using groupby to compute mean/std ON ALL DATA
+        stats = grouped_running.groupby('tag')['value'].agg(['mean', 'std'])
         stats = stats.replace({np.nan: 0.0})
 
         # Join to compute z-scores efficiently
-        joined = grouped.join(stats, on='tag', how='left')
+        joined = grouped_running.join(stats, on='tag', how='left')
         # Avoid division by zero
         joined['std'] = joined['std'].replace(0.0, np.nan)
         joined['z'] = (joined['value'] - joined['mean']) / joined['std']
@@ -142,6 +198,77 @@ def _sigma_2p5_candidates(df: pd.DataFrame) -> Tuple[Set[pd.Timestamp], Dict[str
         return set(), {}
 
 
+def _calculate_time_weighted_score(anomaly_times: Set[pd.Timestamp], half_life_days: float = 7.0) -> float:
+    """Calculate time-weighted anomaly score with exponential decay.
+
+    Recent anomalies get higher weight than older ones using exponential decay.
+
+    Args:
+        anomaly_times: Set of timestamps when anomalies occurred
+        half_life_days: Number of days for weight to decay to 50% (default 7 days)
+
+    Returns:
+        Weighted anomaly score (higher = more recent/severe)
+    """
+    if not anomaly_times:
+        return 0.0
+
+    now = pd.Timestamp.now().tz_localize(None)
+    decay_constant = np.log(2) / half_life_days
+
+    weighted_score = 0.0
+    for timestamp in anomaly_times:
+        # Ensure timestamp is timezone-naive for comparison
+        if isinstance(timestamp, pd.Timestamp) and timestamp.tz is not None:
+            timestamp = timestamp.tz_convert(None)
+
+        # Calculate age in days
+        age_days = (now - timestamp).total_seconds() / (24 * 3600)
+
+        # Exponential decay: weight = e^(-lambda * age)
+        # Recent: age=0 days → weight=1.0 (100%)
+        # 7 days: age=7 days → weight=0.5 (50%)
+        # 14 days: age=14 days → weight=0.25 (25%)
+        # 30 days: age=30 days → weight=0.089 (9%)
+        weight = np.exp(-decay_constant * max(0, age_days))
+        weighted_score += weight
+
+    return float(weighted_score)
+
+
+def _calculate_recency_breakdown(anomaly_times: Set[pd.Timestamp]) -> Dict[str, int]:
+    """Break down anomalies by time period for better visibility.
+
+    Args:
+        anomaly_times: Set of timestamps when anomalies occurred
+
+    Returns:
+        Dictionary with counts for different time periods
+    """
+    if not anomaly_times:
+        return {'last_24h': 0, 'last_7d': 0, 'last_30d': 0, 'older': 0}
+
+    now = pd.Timestamp.now().tz_localize(None)
+    breakdown = {'last_24h': 0, 'last_7d': 0, 'last_30d': 0, 'older': 0}
+
+    for timestamp in anomaly_times:
+        if isinstance(timestamp, pd.Timestamp) and timestamp.tz is not None:
+            timestamp = timestamp.tz_convert(None)
+
+        age = (now - timestamp).total_seconds() / 3600  # Age in hours
+
+        if age <= 24:
+            breakdown['last_24h'] += 1
+        elif age <= 24 * 7:
+            breakdown['last_7d'] += 1
+        elif age <= 24 * 30:
+            breakdown['last_30d'] += 1
+        else:
+            breakdown['older'] += 1
+
+    return breakdown
+
+
 def _load_autoencoder_anomaly_times(project_root: Path) -> Set[pd.Timestamp]:
     """Load precomputed AE anomaly timestamps if available.
 
@@ -174,6 +301,8 @@ def _verify_candidates_with_mtd_if(
     df: pd.DataFrame,
     candidate_times: Set[pd.Timestamp],
     baseline_thresholds: Dict[str, Dict[str, float]],
+    sigma_by_tag: Dict[str, Dict[str, Any]] = None,
+    ae_total: int = 0,
 ) -> Tuple[Dict[str, Any], int, Dict[str, Dict[str, Set[pd.Timestamp]]]]:
     """Verify candidate (tag, time) anomalies using MTD-like thresholds and Isolation Forest.
 
@@ -184,7 +313,11 @@ def _verify_candidates_with_mtd_if(
     Returns (by_tag_verified, total_verified)
     """
     if df.empty or 'tag' not in df.columns or 'value' not in df.columns:
-        return {}, 0
+        return {}, 0, {}
+
+    # Handle defaults for primary detection data
+    if sigma_by_tag is None:
+        sigma_by_tag = {}
 
     df = _ensure_datetime(df)
     # Normalize times to naive to match candidate_times set
@@ -255,10 +388,22 @@ def _verify_candidates_with_mtd_if(
         confirmed_count = len(confirmed_times)
         if confirmed_count <= 0:
             # Still record candidate info for traceability
+            # Get primary detector counts for this tag from sigma_by_tag
+            sigma_count = sigma_by_tag.get(tag, {}).get('count', 0)
+            tag_candidate_count = int(cand_rows.shape[0])
+            ae_count = int(ae_total * (tag_candidate_count / max(1, len(candidate_times)))) if ae_total > 0 else 0
+
             by_tag_verified[tag] = {
                 'count': 0,
                 'rate': 0.0,
                 'method': 'hybrid_verified',
+                'confidence': 'LOW',
+                # Primary detector counts (for anomaly-triggered plotting)
+                'sigma_2_5_count': int(sigma_count),
+                'autoencoder_count': int(ae_count),
+                # Verification detector counts (for anomaly-triggered plotting)
+                'mtd_count': len(mtd_confirmed_times),
+                'isolation_forest_count': len(if_confirmed_times),
                 'verification_breakdown': {
                     'mtd_confirmed': len(mtd_confirmed_times),
                     'if_confirmed': len(if_confirmed_times),
@@ -272,15 +417,97 @@ def _verify_candidates_with_mtd_if(
             'mtd': set(mtd_confirmed_times),
             'if': set(if_confirmed_times),
         }
+        # Get primary detector counts for this tag from sigma_by_tag and ae_times
+        sigma_count = sigma_by_tag.get(tag, {}).get('count', 0)
+        # AE count is global, so estimate based on tag's share of candidate times
+        tag_candidate_count = int(cand_rows.shape[0])
+        ae_count = int(ae_total * (tag_candidate_count / max(1, len(candidate_times)))) if ae_total > 0 else 0
+
+        # TIME-WEIGHTED SCORING: Recent anomalies get higher priority
+        weighted_score = _calculate_time_weighted_score(confirmed_times, half_life_days=7.0)
+        recency_breakdown = _calculate_recency_breakdown(confirmed_times)
+
+        # Calculate priority level based on weighted score and recency
+        # High priority: Recent anomalies (last 24h) or high weighted score
+        if recency_breakdown['last_24h'] > 0:
+            priority = 'CRITICAL'
+        elif recency_breakdown['last_7d'] > 5 or weighted_score > 10:
+            priority = 'HIGH'
+        elif recency_breakdown['last_30d'] > 10 or weighted_score > 5:
+            priority = 'MEDIUM'
+        else:
+            priority = 'LOW'
+
+        # WEIGHTED CONFIDENCE SCORING (0-100 scale)
+        # Provides granular confidence metric for anomaly detection quality
+        confidence_score = 0.0
+
+        # PRIMARY DETECTORS: 70 points total (cast wide net)
+        # 2.5-Sigma: Statistical outlier detection (max 40 points)
+        if sigma_count > 0:
+            # Scale based on detection count, cap at 40
+            sigma_contribution = min(40.0, sigma_count * 4.0)
+            confidence_score += sigma_contribution
+
+        # AutoEncoder: Pattern-based anomaly detection (max 30 points)
+        if ae_count > 0:
+            # Scale based on detection count, cap at 30
+            ae_contribution = min(30.0, ae_count * 3.0)
+            confidence_score += ae_contribution
+
+        # VERIFICATION LAYER: 30 points total (confirm findings)
+        # MTD: Threshold-based verification (max 20 points)
+        mtd_count_val = len(mtd_confirmed_times)
+        if mtd_count_val > 0:
+            # Scale based on confirmed count, cap at 20
+            mtd_contribution = min(20.0, mtd_count_val * 2.0)
+            confidence_score += mtd_contribution
+
+        # Isolation Forest: Distribution-based verification (max 10 points)
+        if_count_val = len(if_confirmed_times)
+        if if_count_val > 0:
+            # Scale based on confirmed count, cap at 10
+            if_contribution = min(10.0, if_count_val * 1.0)
+            confidence_score += if_contribution
+
+        # Map numerical score to categorical levels (backward compatibility)
+        if confidence_score >= 80:
+            confidence_level = 'VERY_HIGH'
+        elif confidence_score >= 60:
+            confidence_level = 'HIGH'
+        elif confidence_score >= 40:
+            confidence_level = 'MEDIUM'
+        else:
+            confidence_level = 'LOW'
+
         by_tag_verified[tag] = {
             'count': int(confirmed_count),
             'rate': float(confirmed_count) / float(len(tag_df) or 1),
             'method': 'hybrid_verified',
+            'confidence': confidence_level,  # Categorical (backward compatible)
+            'confidence_score': float(confidence_score),  # NEW: Numerical (0-100)
+            'confidence_breakdown': {  # NEW: Detailed scoring breakdown
+                'sigma_contribution': min(40.0, sigma_count * 4.0) if sigma_count > 0 else 0.0,
+                'ae_contribution': min(30.0, ae_count * 3.0) if ae_count > 0 else 0.0,
+                'mtd_contribution': min(20.0, mtd_count_val * 2.0) if mtd_count_val > 0 else 0.0,
+                'if_contribution': min(10.0, if_count_val * 1.0) if if_count_val > 0 else 0.0,
+                'total': float(confidence_score)
+            },
+            # Primary detector counts (for anomaly-triggered plotting)
+            'sigma_2_5_count': int(sigma_count),
+            'autoencoder_count': int(ae_count),
+            # Verification detector counts (for anomaly-triggered plotting)
+            'mtd_count': len(mtd_confirmed_times),
+            'isolation_forest_count': len(if_confirmed_times),
             'verification_breakdown': {
                 'mtd_confirmed': len(mtd_confirmed_times),
                 'if_confirmed': len(if_confirmed_times),
                 'candidates': int(cand_rows.shape[0])
-            }
+            },
+            # TIME-WEIGHTED SCORING: Prioritize recent events
+            'weighted_score': float(weighted_score),
+            'recency_breakdown': recency_breakdown,
+            'priority': priority
         }
 
     return by_tag_verified, total_verified, detail_times
@@ -479,8 +706,28 @@ def enhanced_anomaly_detection(df: pd.DataFrame, unit: Optional[str] = None) -> 
     """
     try:
         df = _ensure_datetime(df)
+        # Normalize tag column to string to avoid downstream 'float' or None tag ids
+        if 'tag' in df.columns:
+            try:
+                df = df.copy()
+                df['tag'] = df['tag'].astype(str)
+            except Exception:
+                pass
         total_records = int(len(df))
         unique_tags = int(len(df['tag'].unique())) if 'tag' in df.columns else 0
+
+        # PERFORMANCE FIX: Intelligent sampling for very large datasets (>1M records)
+        # This prevents multi-hour hangs on units like C-13001 with 2.2M records
+        sampled = False
+        sample_rate = 1.0
+        if total_records > 1_000_000:
+            # Sample to 500K records max (preserves statistical validity while improving performance)
+            sample_rate = min(1.0, 500_000 / total_records)
+            df_sampled = df.sample(frac=sample_rate, random_state=42)
+            logger.info(f"Large dataset detected ({total_records:,} records) - sampling {sample_rate:.1%} ({len(df_sampled):,} records) for performance")
+            df_original = df  # Keep reference to original for metadata
+            df = df_sampled
+            sampled = True
 
         # Stage 1: 2.5-sigma candidates
         sigma_times, sigma_by_tag, sigma_times_by_tag = _sigma_2p5_candidates(df)
@@ -532,13 +779,13 @@ def enhanced_anomaly_detection(df: pd.DataFrame, unit: Optional[str] = None) -> 
         # Stage 2: Verification using baseline thresholds and IF
         baseline_thresholds = _load_baseline_thresholds(unit)
         by_tag_verified, total_verified, verify_times_by_tag = _verify_candidates_with_mtd_if(
-            df, candidate_times, baseline_thresholds
+            df, candidate_times, baseline_thresholds, sigma_by_tag, ae_total
         )
 
         # Aggregate results
         anomaly_rate_global = (float(total_verified) / float(total_records)) if total_records > 0 else 0.0
         result = {
-            'method': 'hybrid_sigma2p5_ae_mtd_if',
+            'method': 'hybrid_sigma2p5_ae_mtd_if' + ('_sampled' if sampled else ''),
             'total_anomalies': int(total_verified),
             'anomaly_rate': float(anomaly_rate_global),
             'by_tag': by_tag_verified,
@@ -548,6 +795,12 @@ def enhanced_anomaly_detection(df: pd.DataFrame, unit: Optional[str] = None) -> 
                 'sigma_2p5_total': int(sigma_total),
                 'ae_total': int(ae_total),
                 'unique_candidate_timestamps': int(len(candidate_times)),
+            },
+            'performance': {
+                'total_records': total_records,
+                'sampled': sampled,
+                'sample_rate': sample_rate,
+                'records_analyzed': len(df)
             }
         }
 

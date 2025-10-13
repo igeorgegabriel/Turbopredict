@@ -25,7 +25,7 @@ def read_tags(path: Path) -> list[str]:
 def main() -> int:
     # Configuration for PCMSB C-02001
     # Prefer PCMSB-specific workbook (provided by you) for DataLink
-    xlsx = PROJECT_ROOT / "excel" / "PCMSB_Automation.xlsx"
+    xlsx = PROJECT_ROOT / "excel" / "PCMSB" / "PCMSB_Automation.xlsx"
     tags_file = PROJECT_ROOT / "config" / "tags_pcmsb_c02001.txt"
     out_parquet = PROJECT_ROOT / "data" / "processed" / "C-02001_1y_0p1h.parquet"
 
@@ -36,8 +36,8 @@ def main() -> int:
     end = "*"
     step = "-0.1h"  # 6-minute sampling
     work_sheet = "DL_WORK"
-    settle_seconds = 1.5
-    visible = True  # Show Excel to improve DataLink reliability
+    settle_seconds = 2.0      # Increased settle time for PCMSB
+    visible = False  # Show Excel to improve DataLink reliability
 
     tags = read_tags(tags_file)
     if not tags:
@@ -68,3 +68,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

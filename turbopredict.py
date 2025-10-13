@@ -1,23 +1,30 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
-TURBOPREDICT X PROTEAN - Unified Real Data System
+TURBOPREDICT - Unified Real Data System
 Single entry point for all functionality with real Parquet data integration
 """
 
 import os
 import sys
 import time
+import subprocess
 from pathlib import Path
 from datetime import datetime, timedelta
+from typing import Dict, Any, Optional, Tuple
 import pandas as pd
+import logging
+
+# Initialize logger
+logger = logging.getLogger(__name__)
 
 # Add current directory to Python path
 current_dir = Path(__file__).parent
 
-# Ensure AE + 2.5-sigma primary analysis; require AE before verification by default.
+# Disable autoencoder - use 2.5-sigma primary with MTD and Isolation Forest verification
 import os as _os_patch
-_os_patch.environ.setdefault('REQUIRE_AE','1')
-_os_patch.environ.setdefault('ENABLE_AE_LIVE', _os_patch.getenv('ENABLE_AE_LIVE','1'))
+_os_patch.environ.setdefault('REQUIRE_AE','0')  # Disable autoencoder requirement
+_os_patch.environ.setdefault('ENABLE_AE_LIVE', '0')  # Disable autoencoder completely
+_os_patch.environ.setdefault('PRIMARY_SIGMA_THRESHOLD', '2.5')  # Set 2.5-sigma primary detection
 # Rich imports for beautiful interface
 try:
     from rich.console import Console
@@ -44,15 +51,21 @@ try:
     from pi_monitor.parquet_auto_scan import ParquetAutoScanner
     from pi_monitor.config import Config
     from pi_monitor.cli import main as original_cli_main
+    from pi_monitor.speed_aware_interface import SpeedAwareInterface
     DATA_MODULES_AVAILABLE = True
+    SPEED_AWARE_AVAILABLE = True
 except ImportError as e:
     print(f"Warning: Data modules not available: {e}")
     DATA_MODULES_AVAILABLE = False
+    SPEED_AWARE_AVAILABLE = False
+
+
+logger = logging.getLogger(__name__)
 
 
 class TurbopredictSystem:
-    """Unified TURBOPREDICT X PROTEAN system"""
-    
+    """Unified TURBOPREDICT system"""
+
     def __init__(self):
         """Initialize the unified system"""
         self.console = self._setup_console()
@@ -66,9 +79,17 @@ class TurbopredictSystem:
                 self.scanner = ParquetAutoScanner(self.config)
                 self.data_available = True
                 print("Real data systems initialized successfully")
+
+                # Initialize speed-aware systems (DISABLED for performance)
+                # Speed compensation causes 2+ hour hangs on large datasets
+                # Re-enable when GPU acceleration available (RTX 3080 Ti)
+                self.speed_aware_available = False
+                print("Speed-aware systems disabled (performance optimization)")
+
             except Exception as e:
                 print(f"Warning: Data systems failed to initialize: {e}")
                 self.data_available = False
+                self.speed_aware_available = False
         
     def _setup_console(self):
         """Setup Rich console with fallback"""
@@ -83,7 +104,7 @@ class TurbopredictSystem:
         """Get the unified system banner"""
         return """
 +========================================================================+
-|  TURBOPREDICT X PROTEAN - UNIFIED NEURAL INTERFACE                    |
+|  TURBOPREDICT - UNIFIED NEURAL INTERFACE                              |
 |                                                                        |
 |  TTTTT U   U RRRR  BBBB   OOO  PPPP  RRRR  EEEEE DDDD  III  CCCC TTTTT|
 |    T   U   U R   R B   B O   O P   P R   R E     D   D  I  C   C  T   |
@@ -106,7 +127,7 @@ class TurbopredictSystem:
                 
                 banner_panel = Panel(
                     self.get_system_banner(),
-                    title="[bold cyan]TURBOPREDICT X PROTEAN INITIALIZATION[/]",
+                    title="[bold cyan]TURBOPREDICT INITIALIZATION[/]",
                     subtitle=f"[{status_style}]>>> {data_status} <<<[/]",
                     style="bright_blue"
                 )
@@ -169,27 +190,30 @@ class TurbopredictSystem:
         """Display unified main menu"""
         if self.console:
             try:
-                menu_table = Table(title="[bold magenta]>>> TURBOPREDICT X PROTEAN NEURAL MATRIX <<<[/]")
+                menu_table = Table(title="[bold magenta]>>> TURBOPREDICT NEURAL COMMAND MATRIX <<<[/]")
                 menu_table.add_column("CMD", style="bold cyan", width=5)
                 menu_table.add_column("System", style="bold green", width=25)
                 menu_table.add_column("Description", style="yellow", width=40)
                 
-                # Real data options (always shown)
+                # Streamlined menu - redundant options removed
                 menu_options = [
-                    ("1", "AUTO-REFRESH SCAN", "Auto-update stale data (no prompt)"),
-                    ("2", "UNIT DEEP ANALYSIS", "Analyze specific unit with real data"),
-                    ("3", "HOURLY AUTO LOOP", "Every hour: [1] then [2], until Ctrl+C"),
-                    ("4", "AUTO-SCAN SYSTEM", "Intelligent freshness-based scanning"),
-                    ("5", "DATA QUALITY AUDIT", "Comprehensive quality analysis"),
+                    ("1", "INCREMENTAL REFRESH", "All plants (PCFS/ABF/PCMSB, no gaps)"),
+                    ("2", "UNIT DEEP ANALYSIS", "Smart anomaly detection with auto-triggered plots"),
+                    ("3", "SCHEDULED TASK MANAGER", "Manage hourly background service (works when locked)"),
+                    ("4", "DATA HEALTH CHECK", "Check unit data freshness & quality"),
+                    ("5", "UNIT DATA ANALYSIS", "Detailed unit statistics & comparison"),
                     ("6", "UNIT EXPLORER", "Browse and explore all units"),
-                    ("7", "ORIGINAL CLI", "Access original command interface"),
-                    ("8", "SYSTEM DIAGNOSTICS", "Neural matrix health check"),
+                    ("7", "INCIDENT REPORTER", "WHO-WHAT-WHEN-WHERE detailed reports"),
+                    ("8", "AUTO-PLOT STATUS", "Show anomaly-triggered plot status"),
+                    ("9", "CLEANUP REPORTS", "Clean old reports and reclaim space"),
+                    ("A", "ORIGINAL CLI", "Access original command interface"),
+                    ("D", "SYSTEM DIAGNOSTICS", "Neural matrix health check"),
                     ("0", "NEURAL DISCONNECT", "Terminate all connections")
                 ]
                 
                 for cmd, system, desc in menu_options:
                     # Mark unavailable options if no data
-                    if not self.data_available and cmd in ["1", "2", "3", "4", "5", "6"]:
+                    if not self.data_available and cmd in ["1", "2", "4", "5", "6", "7", "8", "9"]:
                         menu_table.add_row(cmd, f"[dim]{system}[/]", f"[dim red]{desc} (DATA OFFLINE)[/]")
                     else:
                         menu_table.add_row(cmd, system, desc)
@@ -207,8 +231,8 @@ class TurbopredictSystem:
                 
                 choice = Prompt.ask(
                     "[bold magenta]>>> SELECT NEURAL PATHWAY[/]",
-                    choices=["0","1","2","3","4","5","6","7","8"],
-                    default="3" if self.data_available else "7",
+                    choices=["0","1","2","3","4","5","6","7","8","9","A","D"],
+                    default="3" if self.data_available else "A",
                     console=self.console
                 )
                 return choice
@@ -225,14 +249,19 @@ class TurbopredictSystem:
 +================================================================+
 |         TURBOPREDICT X PROTEAN NEURAL COMMAND MATRIX          |
 +================================================================+
-| 1. AUTO-REFRESH SCAN    - Auto-update stale data (no prompt) |
-| 2. UNIT DEEP ANALYSIS   - Analyze specific unit data         |
-| 3. HOURLY AUTO LOOP     - Every hour: [1] then [2]           |
-| 4. AUTO-SCAN SYSTEM     - Intelligent scanning system        |
-| 5. DATA QUALITY AUDIT   - Quality analysis reports           |
+| 1. INCREMENTAL REFRESH  - All plants (PCFS/ABF/PCMSB)        |
+| 2. UNIT DEEP ANALYSIS   - Smart anomaly detection + plots    |
+| 3. SCHEDULED TASK MGR   - Hourly background (works locked)   |
+| 4. DATA HEALTH CHECK    - Check unit data freshness/quality  |
+| 5. UNIT DATA ANALYSIS   - Detailed statistics & comparison   |
 | 6. UNIT EXPLORER        - Browse all available units         |
-| 7. ORIGINAL CLI         - Access original command interface   |
-| 8. SYSTEM DIAGNOSTICS   - System health check                |
+| 7. INCIDENT REPORTER    - WHO-WHAT-WHEN-WHERE reports        |
+| 8. AUTO-PLOT STATUS     - Show anomaly-triggered plot status |
+| 9. CLEANUP REPORTS      - Clean old reports and reclaim space|
++----------------------------------------------------------------+
+| A. ORIGINAL CLI         - Access original command interface  |
+| D. SYSTEM DIAGNOSTICS   - System health check                |
++================================================================+
 | 0. NEURAL DISCONNECT    - Exit system                        |
 +================================================================+
         """
@@ -257,38 +286,47 @@ class TurbopredictSystem:
         return choice.strip()
     
     def execute_option(self, choice):
-        """Execute the selected menu option"""
+        """Execute the selected menu option - streamlined version"""
         if choice == "0":
             self.shutdown_system()
             return False
-            
-        elif choice == "1":
-            self.run_real_data_scanner(auto_refresh=True)
-            
-        elif choice == "2":
+
+        elif choice == "1":  # Incremental Refresh (was I)
+            self.run_incremental_refresh()
+
+        elif choice == "2":  # Unit Deep Analysis
             self.run_unit_analysis()
-            
-        elif choice == "3":
+
+        elif choice == "3":  # Scheduled Task Manager
             self.run_hourly_auto_loop()
-            
-        elif choice == "4":
-            self.run_auto_scan_system()
-            
-        elif choice == "5":
-            self.run_quality_audit()
-            
-        elif choice == "6":
+
+        elif choice == "4":  # Data Health Check (was H)
+            self.run_data_health_check()
+
+        elif choice == "5":  # Unit Data Analysis (was J)
+            self.run_unit_data_analysis()
+
+        elif choice == "6":  # Unit Explorer
             self.run_unit_explorer()
-            
-        elif choice == "7":
+
+        elif choice == "7":  # Incident Reporter (was B)
+            self.run_incident_reporter()
+
+        elif choice == "8":  # Auto-plot Status (was C)
+            self.run_controlled_plots()
+
+        elif choice == "9":  # Cleanup Reports (was D)
+            self.cleanup_reports()
+
+        elif choice.upper() == "A":  # Original CLI (was 7)
             self.launch_original_cli()
-            
-        elif choice == "8":
+
+        elif choice.upper() == "D":  # System Diagnostics (was 8)
             self.run_system_diagnostics()
-            
+
         else:
             self._show_invalid_choice()
-        
+
         return True
     
     def run_real_data_scanner(self, auto_refresh=False):
@@ -380,15 +418,15 @@ class TurbopredictSystem:
                 print("=" * 80)
             
             # Check for stale data and offer PI DataLink refresh
-            main_stale_units = [u for u in stale_units if u.startswith('K-') or u.startswith('07-MT01-')]  # Focus on main K-units and ABF units
+            main_stale_units = stale_units  # Include ALL stale units (PCFS, ABF, and PCMSB)
             if main_stale_units:
                 print()
                 if COLORAMA_AVAILABLE:
-                    print(Fore.YELLOW + f">>> DETECTED {len(main_stale_units)} STALE MAIN UNITS <<<" + Style.RESET_ALL)
+                    print(Fore.YELLOW + f">>> DETECTED {len(main_stale_units)} STALE UNITS <<<" + Style.RESET_ALL)
                     print(Fore.CYAN + f"Stale units: {', '.join(main_stale_units)}" + Style.RESET_ALL)
                     print(Fore.MAGENTA + "PI DataLink refresh available to fetch fresh data..." + Style.RESET_ALL)
                 else:
-                    print(f">>> DETECTED {len(main_stale_units)} STALE MAIN UNITS <<<")
+                    print(f">>> DETECTED {len(main_stale_units)} STALE UNITS <<<")
                     print(f"Stale units: {', '.join(main_stale_units)}")
                     print("PI DataLink refresh available to fetch fresh data...")
                 
@@ -450,58 +488,388 @@ class TurbopredictSystem:
             else:
                 print(f">>> SCANNER FAILED: {e} <<<")
 
-    def run_hourly_auto_loop(self, interval_hours: float = 1.0):
-        """Continuously run [1] Auto-Refresh Scan then [2] Unit Deep Analysis every hour.
+    def _check_scheduled_task_status(self) -> dict:
+        """Check if Background Service is installed (via Startup folder)"""
+        try:
+            # Check startup folder for shortcut
+            startup_folder = Path(os.environ['APPDATA']) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+            shortcut_path = startup_folder / "TurboPredict Service.lnk"
 
-        Press Ctrl+C to stop the loop and return to the menu.
+            installed = shortcut_path.exists()
+
+            # Check if service is running by looking for Python process
+            running = False
+            try:
+                result = subprocess.run(
+                    ["powershell", "-Command", "Get-Process -Name python -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -like '*hourly_refresh*'}"],
+                    capture_output=True,
+                    text=True,
+                    timeout=3
+                )
+                running = bool(result.stdout.strip())
+            except:
+                pass
+
+            status = {
+                'installed': installed,
+                'enabled': installed,  # If shortcut exists, it's enabled
+                'running': running,
+                'last_run': None,
+                'next_run': "At next logon" if installed else None
+            }
+
+            return status
+        except Exception as e:
+            logger.warning(f"Failed to check service status: {e}")
+            return {'installed': False, 'enabled': False, 'running': False}
+
+    def _install_scheduled_task(self) -> bool:
+        """Install Background Service (NO ADMIN REQUIRED)"""
+        vbs_launcher = Path(__file__).parent / "start_service.vbs"
+
+        if not vbs_launcher.exists():
+            print(f"ERROR: Launcher not found at {vbs_launcher}")
+            return False
+
+        print("Installing Background Service...")
+        print("NOTE: No administrator privileges required!")
+        print("      Uses Windows Startup folder")
+
+        try:
+            # Get startup folder path
+            startup_folder = Path(os.environ['APPDATA']) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+            shortcut_path = startup_folder / "TurboPredict Service.lnk"
+
+            print(f"Creating shortcut in: {startup_folder}")
+
+            # Create shortcut using PowerShell
+            ps_command = f'''
+$ws = New-Object -ComObject WScript.Shell;
+$s = $ws.CreateShortcut('{shortcut_path}');
+$s.TargetPath = '{vbs_launcher}';
+$s.WorkingDirectory = '{vbs_launcher.parent}';
+$s.Description = 'TurboPredict Background Service';
+$s.Save()
+'''
+
+            result = subprocess.run(
+                ["powershell", "-Command", ps_command],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+
+            if result.returncode == 0 and shortcut_path.exists():
+                print("[SUCCESS] Service installed to Startup folder!")
+                print(f"  Shortcut: {shortcut_path}")
+                return True
+            else:
+                print(f"[ERROR] Failed to create startup shortcut")
+                if result.stderr:
+                    print(f"  Error: {result.stderr}")
+                return False
+
+        except Exception as e:
+            print(f"[ERROR] Installation failed: {e}")
+            return False
+
+    def _enable_scheduled_task(self) -> bool:
+        """Enable the service (re-create startup shortcut)"""
+        return self._install_scheduled_task()
+
+    def _disable_scheduled_task(self) -> bool:
+        """Disable the service (remove startup shortcut)"""
+        try:
+            startup_folder = Path(os.environ['APPDATA']) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
+            shortcut_path = startup_folder / "TurboPredict Service.lnk"
+
+            if shortcut_path.exists():
+                shortcut_path.unlink()
+                print("[SUCCESS] Startup shortcut removed")
+                return True
+            else:
+                print("[INFO] Shortcut not found (already disabled)")
+                return True
+        except Exception as e:
+            print(f"[ERROR] Failed to remove shortcut: {e}")
+            return False
+
+    def _run_scheduled_task_now(self) -> bool:
+        """Start the background service immediately"""
+        vbs_launcher = Path(__file__).parent / "start_service.vbs"
+
+        if not vbs_launcher.exists():
+            print(f"[ERROR] Launcher not found: {vbs_launcher}")
+            return False
+
+        try:
+            # Run VBS launcher (which runs PowerShell hidden)
+            result = subprocess.run(
+                ["wscript", str(vbs_launcher)],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            print("[SUCCESS] Service started in background")
+            print("  Check logs in a few minutes: logs/hourly_refresh.log")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to start service: {e}")
+            return False
+
+    def _stop_scheduled_task(self) -> bool:
+        """Stop the running background service"""
+        try:
+            # Find and kill Python processes running hourly_refresh
+            result = subprocess.run(
+                ["powershell", "-Command",
+                 "Get-Process -Name python -ErrorAction SilentlyContinue | Where-Object {$_.CommandLine -like '*hourly_refresh*'} | Stop-Process -Force"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            print("[SUCCESS] Service stopped")
+            return True
+        except Exception as e:
+            print(f"[ERROR] Failed to stop service: {e}")
+            return False
+
+    def _view_scheduled_task_logs(self):
+        """View logs from background service execution"""
+        hourly_log = Path(__file__).parent / "logs" / "hourly_refresh.log"
+        service_log = Path(__file__).parent / "logs" / "scheduled_service.log"
+
+        # Check both log files
+        logs_found = False
+
+        if hourly_log.exists():
+            logs_found = True
+            print(f"\n{'='*80}")
+            print(f"HOURLY REFRESH LOG: {hourly_log}")
+            print(f"{'='*80}\n")
+            try:
+                with open(hourly_log, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+                    # Show last 30 lines
+                    for line in lines[-30:]:
+                        print(line.rstrip())
+            except Exception as e:
+                print(f"ERROR: Failed to read log file: {e}")
+
+        if service_log.exists():
+            logs_found = True
+            print(f"\n{'='*80}")
+            print(f"SERVICE LOG: {service_log}")
+            print(f"{'='*80}\n")
+            try:
+                with open(service_log, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+                    # Show last 20 lines
+                    for line in lines[-20:]:
+                        print(line.rstrip())
+            except Exception as e:
+                print(f"ERROR: Failed to read log file: {e}")
+
+        if not logs_found:
+            print("No log files found yet. Service may not have run.")
+            print(f"Logs will be created at:")
+            print(f"  - {hourly_log}")
+            print(f"  - {service_log}")
+
+    def run_hourly_auto_loop(self, interval_hours: float = 1.0):
+        """Manage Windows Scheduled Task for reliable hourly analysis.
+
+        This replaces the old loop that didn't work when laptop was locked.
+        Now uses Windows Task Scheduler to run even when locked/sleeping.
         """
         if not self._check_data_available():
             return
 
+        # Check scheduled task status
+        status = self._check_scheduled_task_status()
+
         if COLORAMA_AVAILABLE:
             print(Fore.GREEN + "=" * 80)
-            print("          HOURLY AUTO LOOP: [1] AUTO-REFRESH -> [2] UNIT ANALYSIS")
+            print("     CONTINUOUS OVERNIGHT SERVICE - BACKGROUND TASK MANAGER")
             print("=" * 80 + Style.RESET_ALL)
-            print(Fore.CYAN + f"Interval: {interval_hours} hour(s). Press Ctrl+C to stop." + Style.RESET_ALL)
+            print(Fore.CYAN + "Runs continuous hourly loop - works when laptop is locked/sleeping" + Style.RESET_ALL)
         else:
             print("=" * 80)
-            print("          HOURLY AUTO LOOP: [1] AUTO-REFRESH -> [2] UNIT ANALYSIS")
+            print("     CONTINUOUS OVERNIGHT SERVICE - BACKGROUND TASK MANAGER")
             print("=" * 80)
-            print(f"Interval: {interval_hours} hour(s). Press Ctrl+C to stop.")
+            print("Runs continuous hourly loop - works when laptop is locked/sleeping")
 
-        cycle = 1
-        try:
-            while True:
-                # Step 1: Auto-refresh scan (option [1])
-                if COLORAMA_AVAILABLE:
-                    print(Fore.MAGENTA + f"\n>>> CYCLE #{cycle}: RUNNING [1] AUTO-REFRESH SCAN <<<" + Style.RESET_ALL)
-                else:
-                    print(f"\n>>> CYCLE #{cycle}: RUNNING [1] AUTO-REFRESH SCAN <<<")
-                self.run_real_data_scanner(auto_refresh=True)
+        print("\nService Status:")
+        if status['installed']:
+            state = "ENABLED" if status['enabled'] else "DISABLED"
+            running_state = "RUNNING" if status['running'] else "STOPPED"
 
-                # Step 2: Unit deep analysis (option [2])
-                if COLORAMA_AVAILABLE:
-                    print(Fore.MAGENTA + f"\n>>> CYCLE #{cycle}: RUNNING [2] UNIT DEEP ANALYSIS <<<" + Style.RESET_ALL)
-                else:
-                    print(f"\n>>> CYCLE #{cycle}: RUNNING [2] UNIT DEEP ANALYSIS <<<")
-                self.run_unit_analysis()
-
-                # Sleep until next cycle
-                wait_seconds = int(interval_hours * 3600)
-                next_time = datetime.now() + timedelta(seconds=wait_seconds)
-                if COLORAMA_AVAILABLE:
-                    print(Fore.CYAN + f"Waiting {interval_hours} hour(s). Next cycle at: {next_time.strftime('%Y-%m-%d %H:%M:%S')}" + Style.RESET_ALL)
-                else:
-                    print(f"Waiting {interval_hours} hour(s). Next cycle at: {next_time.strftime('%Y-%m-%d %H:%M:%S')}")
-                time.sleep(wait_seconds)
-                cycle += 1
-
-        except KeyboardInterrupt:
-            if COLORAMA_AVAILABLE:
-                print(Fore.YELLOW + "\n>>> HOURLY AUTO LOOP STOPPED BY USER <<<" + Style.RESET_ALL)
+            if status['running']:
+                color = Fore.GREEN
+                run_color = Fore.GREEN
+            elif status['enabled']:
+                color = Fore.YELLOW
+                run_color = Fore.YELLOW
             else:
-                print("\n>>> HOURLY AUTO LOOP STOPPED BY USER <<<")
-            return
+                color = Fore.RED
+                run_color = Fore.RED
+
+            if COLORAMA_AVAILABLE:
+                print(color + f"  [OK] Installed: YES" + Style.RESET_ALL)
+                print(color + f"  [OK] State: {state}" + Style.RESET_ALL)
+                print(run_color + f"  [OK] Status: {running_state}" + Style.RESET_ALL)
+            else:
+                print(f"  [OK] Installed: YES")
+                print(f"  [OK] State: {state}")
+                print(f"  [OK] Status: {running_state}")
+
+            if status['last_run']:
+                print(f"  [OK] Last Run: {status['last_run']}")
+        else:
+            if COLORAMA_AVAILABLE:
+                print(Fore.RED + "  [X] Not installed" + Style.RESET_ALL)
+            else:
+                print("  [X] Not installed")
+
+        print("\nOptions:")
+        if not status['installed']:
+            print("  [1] Install service (NO ADMIN NEEDED)")
+            print("  [2] View setup instructions")
+            print("  [0] Back to main menu")
+
+            choice = input("\nSelect option: ").strip()
+
+            if choice == '1':
+                success = self._install_scheduled_task()
+                if success:
+                    print("\n[SUCCESS] Background service installed successfully!")
+                    print("  - Runs as current user (no admin needed)")
+                    print("  - Auto-starts at logon")
+                    print("  - Works when laptop is locked")
+                    print("  - Continuous hourly cycles")
+                else:
+                    print("\n[ERROR] Installation failed")
+                    print("  Check error messages above")
+                input("\nPress Enter to continue...")
+
+            elif choice == '2':
+                print("\nAutomatic Installation (Recommended):")
+                print("  Just select option [1] above - no admin needed!")
+                print("")
+                print("Manual Installation (Alternative):")
+                print("  1. Double-click 'setup_scheduled_task.bat'")
+                print("  2. Wait for confirmation message")
+                print("")
+                print("Or read: SCHEDULED_TASK_SETUP.md")
+                input("\nPress Enter to continue...")
+
+        else:
+            if status['enabled']:
+                if status['running']:
+                    print("  [1] Restart service (stop + start with latest code)")
+                    print("  [2] Stop service (end current process)")
+                    print("  [3] View service logs")
+                    print("  [4] Disable service (prevent auto-start)")
+                    print("  [0] Back to main menu")
+                else:
+                    print("  [1] Start service now")
+                    print("  [2] View service logs")
+                    print("  [3] Disable service (prevent auto-start)")
+                    print("  [0] Back to main menu")
+            else:
+                print("  [1] Enable service (auto-start on boot/logon)")
+                print("  [2] View service logs")
+                print("  [0] Back to main menu")
+
+            choice = input("\nSelect option: ").strip()
+
+            if choice == '1':
+                if status['enabled']:
+                    if status['running']:
+                        # Restart the service
+                        print("\n[RESTART] Restarting background service with latest code...")
+                        print("  Step 1/2: Stopping current service...")
+                        stop_success = self._stop_scheduled_task()
+                        if stop_success:
+                            print("  [OK] Service stopped")
+                            time.sleep(2)
+                            print("  Step 2/2: Starting service with updated code...")
+                            start_success = self._run_scheduled_task_now()
+                            if start_success:
+                                print("\n[SUCCESS] Service restarted successfully!")
+                                print("  Background service is running with latest code changes")
+                                print("  Check logs: logs/hourly_refresh.log")
+                            else:
+                                print("\n[ERROR] Failed to start service after stopping")
+                        else:
+                            print("\n[ERROR] Failed to stop service for restart")
+                    else:
+                        # Start the service
+                        print("\nStarting background service...")
+                        success = self._run_scheduled_task_now()
+                        if success:
+                            print("[SUCCESS] Service started successfully!")
+                            print("  Background service is now running hourly cycles")
+                            print("  Check logs: logs/hourly_refresh.log")
+                        else:
+                            print("[ERROR] Failed to start service")
+                else:
+                    # Enable the service
+                    print("\nEnabling background service...")
+                    success = self._enable_scheduled_task()
+                    if success:
+                        print("[SUCCESS] Service enabled successfully!")
+                        print("  It will auto-start on next boot/logon")
+                        print("  To start now, select option [1] Start service")
+                    else:
+                        print("[ERROR] Failed to enable service")
+                input("\nPress Enter to continue...")
+
+            elif choice == '2':
+                if status['running']:
+                    # Stop service
+                    print("\nStopping background service...")
+                    success = self._stop_scheduled_task()
+                    if success:
+                        print("[SUCCESS] Service stopped successfully!")
+                        print("  Background service has been terminated")
+                    else:
+                        print("[ERROR] Failed to stop service")
+                    input("\nPress Enter to continue...")
+                else:
+                    # View logs
+                    self._view_scheduled_task_logs()
+                    input("\nPress Enter to continue...")
+
+            elif choice == '3':
+                if status['running']:
+                    # View logs when running
+                    self._view_scheduled_task_logs()
+                    input("\nPress Enter to continue...")
+                else:
+                    # Disable service when stopped
+                    print("\nDisabling background service...")
+                    success = self._disable_scheduled_task()
+                    if success:
+                        print("[SUCCESS] Service disabled successfully!")
+                        print("  Background service will not auto-start")
+                    else:
+                        print("[ERROR] Failed to disable service")
+                    input("\nPress Enter to continue...")
+
+            elif choice == '4' and status['enabled'] and status['running']:
+                # Disable service (only when running)
+                print("\nDisabling background service...")
+                print("  Stopping running service first...")
+                self._stop_scheduled_task()
+                time.sleep(1)
+                success = self._disable_scheduled_task()
+                if success:
+                    print("[SUCCESS] Service disabled successfully!")
+                    print("  Background service will not auto-start")
+                else:
+                    print("[ERROR] Failed to disable service")
+                input("\nPress Enter to continue...")
     
     def _fetch_fresh_data_from_pi(self, stale_units, max_age_hours: float | None = None):
         """Fetch fresh data from PI DataLink using progress tracking system"""
@@ -515,15 +883,29 @@ class TurbopredictSystem:
             
             # Look for Excel automation workbooks (supporting all plants)
             project_root = Path(__file__).parent
+            # Expanded search: include plant subfolders and master files
             excel_candidates = [
+                # Root-level common names
                 project_root / "excel" / "ABF_Automation.xlsx",
                 project_root / "excel" / "ABFSB_Automation.xlsx",
                 project_root / "excel" / "PCFS_Automation_2.xlsx",
                 project_root / "excel" / "PCFS_Automation.xlsx",
                 project_root / "excel" / "PCMSB_Automation.xlsx",
+                # Plant subfolders
+                project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation_Master.xlsx",
+                project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx",
+                project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",
+                project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx",
+                # Generic fallbacks
                 project_root / "data" / "raw" / "Automation.xlsx",
                 project_root / "Automation.xlsx",
             ]
+            # Last resort: glob any Automation*.xlsx under excel/
+            if not any(p.exists() for p in excel_candidates):
+                for path in (project_root / "excel").rglob("*Automation*.xlsx"):
+                    excel_candidates.append(path)
             main_excel = next((path for path in excel_candidates if path.exists()), None)
 
             if main_excel is None:
@@ -587,14 +969,81 @@ class TurbopredictSystem:
     def _reload_database(self):
         """Reload the database to pick up fresh data after PI refresh"""
         try:
+            # Close existing DuckDB connection and clear object reference
+            if hasattr(self, 'db') and self.db is not None:
+                if hasattr(self.db, 'conn') and self.db.conn is not None:
+                    try:
+                        self.db.conn.close()
+                    except Exception:
+                        pass
+                # Force garbage collection of old database object
+                del self.db
+
+            # Clear Python import cache for ParquetDatabase (force fresh import)
+            import gc
+            gc.collect()
+
+            # Wait for any pending dedup operations to complete
+            # Check if dedup files are still being written (file size stabilizes)
+            import time
+            from pathlib import Path
+            processed_dir = Path("data/processed")
+            if processed_dir.exists():
+                if COLORAMA_AVAILABLE:
+                    print(Fore.CYAN + "Waiting for dedup operations to complete..." + Style.RESET_ALL)
+
+                # Wait up to 10 seconds for file sizes to stabilize
+                max_wait = 10
+                waited = 0
+                stable = False
+                while waited < max_wait and not stable:
+                    time.sleep(1)
+                    waited += 1
+                    # Quick check: if all .dedup.parquet files haven't been modified in last 2 seconds, assume stable
+                    try:
+                        dedup_files = list(processed_dir.glob("*.dedup.parquet"))
+                        if dedup_files:
+                            newest_mtime = max(f.stat().st_mtime for f in dedup_files)
+                            age = time.time() - newest_mtime
+                            if age > 2:  # No dedup file modified in last 2 seconds
+                                stable = True
+                                if COLORAMA_AVAILABLE:
+                                    print(Fore.GREEN + f"  Dedup stable after {waited}s" + Style.RESET_ALL)
+                                break
+                    except Exception:
+                        pass
+
+                if not stable and COLORAMA_AVAILABLE:
+                    print(Fore.YELLOW + f"  Proceeding after {max_wait}s timeout" + Style.RESET_ALL)
+            else:
+                # Fallback delay
+                time.sleep(1.5)
+
             # Reinitialize the ParquetDatabase to pick up updated Parquet files
             self.db = ParquetDatabase()
-            
+
+            # CRITICAL: Invalidate DuckDB's read_parquet() cache to force fresh file reads
+            self.db.invalidate_cache()
+
             if COLORAMA_AVAILABLE:
-                print(Fore.GREEN + "Database reloaded successfully with fresh data!" + Style.RESET_ALL)
+                print(Fore.GREEN + "Database reloaded with fresh data (DuckDB cache invalidated)!" + Style.RESET_ALL)
+                # Debug: Show what C-02001 looks like now (if it exists)
+                try:
+                    all_units = self.db.get_all_units()
+                    if 'C-02001' in all_units:
+                        c02001_info = self.db.get_data_freshness_info('C-02001')
+                        age_val = c02001_info.get('data_age_hours', -1)
+                        records_val = c02001_info.get('total_records', 0)
+                        print(Fore.CYAN + f"  C-02001 verification: {age_val:.1f}h old, {records_val:,} records" + Style.RESET_ALL)
+                    else:
+                        print(Fore.YELLOW + "  C-02001 not found in unit list" + Style.RESET_ALL)
+                except Exception as e:
+                    import traceback
+                    print(Fore.YELLOW + f"  C-02001 verification failed: {type(e).__name__}: {e}" + Style.RESET_ALL)
+                    print(Fore.YELLOW + f"  Traceback: {traceback.format_exc()[:200]}" + Style.RESET_ALL)
             else:
                 print("Database reloaded successfully with fresh data!")
-                
+
         except Exception as e:
             if COLORAMA_AVAILABLE:
                 print(Fore.RED + f">>> DATABASE RELOAD FAILED: {e} <<<" + Style.RESET_ALL)
@@ -727,9 +1176,11 @@ class TurbopredictSystem:
             
             # DETAILED PROBLEMATIC TAGS LIST
             self._display_detailed_problematic_tags(all_analyses)
-            
-            # AUTOMATICALLY GENERATE PLOTS WITH PROPER FOLDER STRUCTURE
-            self._generate_enhanced_plots(all_analyses)
+
+            # EXTENDED ANALYSIS PLOTTING DISABLED - Now using anomaly-triggered plotting only
+            # Old system generated SMART_ANALYSIS.png files in dated directories
+            # New system generates ANOMALY_*.png files only for recent (<24h) verified anomalies
+            # self._generate_enhanced_plots(all_analyses)
             
         except Exception as e:
             self.console.print(f"[red]Display error: {e}[/]")
@@ -776,9 +1227,11 @@ class TurbopredictSystem:
             
             # Also display detailed problematic tags for fallback
             self._display_detailed_problematic_tags_fallback(all_analyses)
-            
-            # AUTOMATICALLY GENERATE PLOTS WITH PROPER FOLDER STRUCTURE
-            self._generate_enhanced_plots(all_analyses)
+
+            # EXTENDED ANALYSIS PLOTTING DISABLED - Now using anomaly-triggered plotting only
+            # Old system generated SMART_ANALYSIS.png files in dated directories
+            # New system generates ANOMALY_*.png files only for recent (<24h) verified anomalies
+            # self._generate_enhanced_plots(all_analyses)
             
         except Exception as e:
             print(f"Display error: {e}")
@@ -1084,15 +1537,15 @@ class TurbopredictSystem:
             for i, tag_info in enumerate(all_problematic_tags[:50], 1):
                 rank = str(i)
                 unit = tag_info['unit']
-                tag = tag_info['tag']
+                tag = str(tag_info['tag'])
                 count = f"{tag_info['count']:,}"
                 rate = f"{tag_info['rate']:.2f}"
                 detection_method = tag_info['detection_method']
                 confidence = tag_info['confidence']
                 
                 # Truncate long tag names
-                if len(tag) > 30:
-                    tag = tag[-30:]  # Show last 30 chars
+                if len(str(tag)) > 30:
+                    tag = str(tag)[-30:]  # Show last 30 chars
                     
                 # Color code by severity
                 if tag_info['rate'] >= 50:
@@ -1368,20 +1821,28 @@ class TurbopredictSystem:
             print("Excel automation completed - all dialogs suppressed!")
     
     def run_unit_analysis(self):
-        """Run deep unit analysis"""
+        """Run deep unit analysis with speed-aware functionality"""
         if not self._check_data_available():
             return
-            
+
         try:
             units = self.db.get_all_units()
             if not units:
                 self._show_message("No units found in database", "warning")
                 return
-            
+
+            # Check if speed-aware functionality is available
+            speed_aware_enabled = hasattr(self, 'speed_aware_available') and self.speed_aware_available
+
             if self.console:
-                self.console.print(f"[cyan]Found {len(units)} units: {', '.join(units)}[/]")
-                self.console.print(f"[bold green]>>> ANALYZING ALL UNITS AUTOMATICALLY <<<[/]")
-                
+                if speed_aware_enabled:
+                    self.console.print(f"[cyan]Found {len(units)} units: {', '.join(units)}[/]")
+                    self.console.print(f"[bold green]>>> ANALYZING ALL UNITS WITH SPEED-AWARE DETECTION <<<[/]")
+                    self.console.print(f"[yellow]⚡ Speed compensation enabled for enhanced anomaly detection[/]")
+                else:
+                    self.console.print(f"[cyan]Found {len(units)} units: {', '.join(units)}[/]")
+                    self.console.print(f"[bold green]>>> ANALYZING ALL UNITS AUTOMATICALLY <<<[/]")
+
                 with Progress(
                     SpinnerColumn(),
                     TextColumn("[progress.description]{task.description}"),
@@ -1391,36 +1852,64 @@ class TurbopredictSystem:
                     console=self.console
                 ) as progress:
                     main_task = progress.add_task("Deep scanning all neural pathways...", total=len(units))
-                    
+
                     all_analyses = {}
                     for i, unit in enumerate(units):
                         progress.update(main_task, description=f"Analyzing unit {unit}...")
-                        analysis = self.scanner.analyze_unit_data(unit, run_anomaly_detection=True)
+
+                        # Enhanced analysis with speed-aware functionality if available
+                        if hasattr(self, '_analyze_unit_with_speed_awareness'):
+                            analysis = self._analyze_unit_with_speed_awareness(unit, speed_aware_enabled)
+                        else:
+                            # Fallback to standard analysis
+                            analysis = self.scanner.analyze_unit_data(unit, run_anomaly_detection=True)
                         all_analyses[unit] = analysis
                         progress.advance(main_task)
                 
                 self._display_all_units_analysis(all_analyses)
-                try:
-                    self._generate_enhanced_option2_plots(all_analyses)
-                except Exception as _plot_exc:
-                    self._show_message(f"Enhanced plots skipped: {_plot_exc}", "warning")
+                # EXTENDED ANALYSIS PLOTTING DISABLED - Using anomaly-triggered plotting only
+                # try:
+                #     self._generate_enhanced_option2_plots(all_analyses)
+                # except Exception as _plot_exc:
+                #     self._show_message(f"Enhanced plots skipped: {_plot_exc}", "warning")
             else:
-                print(f"Found {len(units)} units: {', '.join(units)}")
-                print(">>> ANALYZING ALL UNITS AUTOMATICALLY <<<")
-                
+                if speed_aware_enabled:
+                    print(f"Found {len(units)} units: {', '.join(units)}")
+                    print(">>> ANALYZING ALL UNITS WITH SPEED-AWARE DETECTION <<<")
+                    print("⚡ Speed compensation enabled for enhanced anomaly detection")
+                else:
+                    print(f"Found {len(units)} units: {', '.join(units)}")
+                    print(">>> ANALYZING ALL UNITS AUTOMATICALLY <<<")
+
                 all_analyses = {}
                 for i, unit in enumerate(units):
-                    print(f"[{i+1}/{len(units)}] Analyzing {unit}...")
-                    analysis = self.scanner.analyze_unit_data(unit, run_anomaly_detection=True)
+                    print(f"[{i+1}/{len(units)}] Smart anomaly scanning {unit}...")
+
+                    # Enhanced analysis with speed-aware functionality if available
+                    if hasattr(self, '_analyze_unit_with_speed_awareness'):
+                        analysis = self._analyze_unit_with_speed_awareness(unit, speed_aware_enabled)
+                    else:
+                        # Fallback to standard analysis with 90-day window (performance optimized)
+                        analysis = self.scanner.analyze_unit_data(unit, run_anomaly_detection=True, days_limit=90)
                     all_analyses[unit] = analysis
-                    # Emit a concise status line for consistency across units
+
+                    # Show enhanced detection status
                     an = analysis.get('anomalies', {}) if isinstance(analysis, dict) else {}
                     method = an.get('method', 'unknown')
                     total = an.get('total_anomalies', 0)
+
+                    # Show speed-aware status if applicable
+                    if speed_aware_enabled and 'speed_aware_analysis' in analysis:
+                        speed_analysis = analysis['speed_aware_analysis']
+                        if speed_analysis.get('compensation_applied', False):
+                            reduction = speed_analysis.get('anomaly_reduction_factor', 0) * 100
+                            print(f"    ⚡ Speed compensation: {reduction:.1f}% anomaly reduction")
                     rate = an.get('anomaly_rate', 0.0)
-                    if method == 'mtd_with_isolation_forest_fallback':
+                    if method in ('hybrid_anomaly_detection', 'smart_enhanced'):
+                        print(f"  -> Enhanced Pipeline: anomalies={total} ({rate*100:.2f}%)")
+                    elif method == 'mtd_with_isolation_forest_fallback':
                         print(f"  -> Fallback: MTD/IF, anomalies={total} ({rate*100:.2f}%)")
-                    elif method in ('mahalanobis_taguchi_distance','baseline_tuned','smart_enhanced'):
+                    elif method in ('mahalanobis_taguchi_distance','baseline_tuned'):
                         print(f"  -> {method}: anomalies={total} ({rate*100:.2f}%)")
                     else:
                         print(f"  -> Detection: {method}, anomalies={total} ({rate*100:.2f}%)")
@@ -1435,62 +1924,282 @@ class TurbopredictSystem:
             self._show_error(f"Analysis failed: {e}")
 
     def _generate_enhanced_option2_plots(self, all_analyses: dict):
-        """Generate enhanced plots (2.5σ + AE candidates, MTD/IF confirmations) for Option [2].
+        """Generate anomaly-triggered plots for Option [2] using smart detection pipeline.
 
-        Uses the overlay-capable helpers in enhanced_plot_anomalies.py. This produces
-        per-unit output under reports/enhanced_option2_<timestamp>/.
+        Only generates 3-month historical plots when verified anomalies are detected
+        by the detection pipeline: 2.5-sigma + Autoencoder -> MTD + Isolation Forest
         """
         from datetime import datetime, timedelta
-        import importlib
         import pandas as pd
-        try:
-            ep = importlib.import_module('enhanced_plot_anomalies')
-        except Exception as ex:
-            raise RuntimeError(f"enhanced_plot_anomalies not importable: {ex}")
+        from pi_monitor.smart_anomaly_detection import smart_anomaly_detection
+        from pi_monitor.anomaly_triggered_plots import generate_anomaly_plots
 
-        ts = datetime.now().strftime('%Y%m%d_%H%M%S')
-        base_dir = (Path(__file__).parent / 'reports' / f'enhanced_option2_{ts}')
-        base_dir.mkdir(parents=True, exist_ok=True)
+        print("\n>>> ANOMALY-TRIGGERED PLOTTING SYSTEM <<<")
+        print("Only generating plots for verified anomalous tags")
+        print("Detection Pipeline: 2.5-Sigma + Autoencoder -> MTD + Isolation Forest")
 
-        cutoff = datetime.now() - timedelta(days=90)
+        # Collect all detection results for anomaly plotting
+        detection_results = {}
+        verified_anomalies_found = 0
+
+        cutoff = datetime.now() - timedelta(days=90)  # 3-month analysis window
 
         units = list(all_analyses.keys())
         for unit in units:
-            analysis = all_analyses[unit] or {}
-            anomalies = analysis.get('anomalies', {}) if isinstance(analysis, dict) else {}
-            # Provide details to plotting module (used by overlay markers)
-            try:
-                setattr(ep, '_last_anomaly_details', anomalies.get('details', {}))
-            except Exception:
-                pass
+            print(f"\n[ANOMALY SCAN] {unit}:")
 
-            # Load and trim data for recent window
+            # Load unit data for anomaly detection
             df = self.db.get_unit_data(unit)
             if df.empty:
+                print(f"  No data available for {unit}")
                 continue
+
             try:
+                # Filter to analysis window
                 df['time'] = pd.to_datetime(df['time'])
                 df_recent = df[df['time'] >= cutoff].copy()
-            except Exception:
-                df_recent = df.copy()
 
-            unit_dir = base_dir / unit
-            unit_dir.mkdir(parents=True, exist_ok=True)
+                if df_recent.empty:
+                    print(f"  No data in 3-month analysis window")
+                    continue
 
-            by_tag = anomalies.get('by_tag', {})
-            if not by_tag:
+                # Run enhanced analysis with extended freshness + staleness anomaly detection
+                # This includes both smart anomaly detection AND our new staleness analysis
+                results = self.scanner.analyze_unit_data(unit, run_anomaly_detection=True)
+
+                # Extract anomaly information for plotting
+                anomalies = results.get('anomalies', {})
+                if anomalies:
+                    # Convert to smart_anomaly_detection format for compatibility
+                    results = {
+                        'total_anomalies': anomalies.get('total_anomalies', 0),
+                        'by_tag': anomalies.get('by_tag', {}),
+                        'method': f"extended_{anomalies.get('method', 'enhanced')}",
+                        'unit_status': {'status': 'ANALYZED', 'message': 'Extended analysis with staleness detection'},
+                        'extended_freshness': results.get('extended_freshness', {}),
+                        'instrumentation_anomalies': anomalies.get('instrumentation_anomalies', {})
+                    }
+
+                # Store results for batch plotting
+                detection_results[unit] = results
+
+                # Report status
+                unit_status = results.get('unit_status', {})
+                total_anomalies = results.get('total_anomalies', 0)
+                by_tag = results.get('by_tag', {})
+
+                print(f"  Status: {unit_status.get('status', 'UNKNOWN')}")
+                print(f"  Total anomalies: {total_anomalies:,}")
+                print(f"  Problematic tags: {len(by_tag)}")
+
+                # Report extended analysis results
+                extended_freshness = results.get('extended_freshness', {})
+                if extended_freshness:
+                    hours_stale = extended_freshness.get('hours_since_latest', 0)
+                    staleness_cat = extended_freshness.get('staleness_category', {})
+                    print(f"  Data staleness: {hours_stale:.1f}h ({staleness_cat.get('level', 'unknown')})")
+
+                # Report instrumentation anomalies
+                inst_anomalies = results.get('instrumentation_anomalies', {})
+                if inst_anomalies:
+                    print(f"  Instrumentation anomalies: {len(inst_anomalies)} detected")
+                    for anom_name, anom_details in inst_anomalies.items():
+                        severity = anom_details.get('severity', 'unknown')
+                        description = anom_details.get('description', 'No description')
+                        print(f"    - {anom_name}: {severity} ({description})")
+
+                # Count verified anomalies
+                unit_verified = 0
+                for tag, tag_info in by_tag.items():
+                    sigma_count = tag_info.get('sigma_2_5_count', 0)
+                    ae_count = tag_info.get('autoencoder_count', 0)
+                    mtd_count = tag_info.get('mtd_count', 0)
+                    iso_count = tag_info.get('isolation_forest_count', 0)
+                    confidence = tag_info.get('confidence', 'LOW')
+
+                    # Check verification criteria
+                    primary_detected = sigma_count > 0 or ae_count > 0
+                    verification_detected = mtd_count > 0 or iso_count > 0
+                    high_confidence = confidence in ['HIGH', 'MEDIUM']
+
+                    if primary_detected and verification_detected and high_confidence:
+                        unit_verified += 1
+
+                verified_anomalies_found += unit_verified
+                print(f"  Verified anomalies: {unit_verified}")
+
+            except Exception as e:
+                print(f"  ERROR in anomaly detection: {e}")
                 continue
-            top = sorted(by_tag.items(), key=lambda x: x[1].get('count', 0), reverse=True)[:10]
-            for tag, tag_info in top:
-                # Reuse helper to draw plot with overlays
-                ep.create_enhanced_tag_plot(unit, tag, tag_info, df_recent, unit_dir)
 
-        # Optionally create a light overview once all units are processed
-        try:
-            ep.create_main_overview(base_dir, units)
-        except Exception:
-            pass
-    
+        # Generate extended plots (including staleness data without cutoffs)
+        if detection_results:
+            print(f"\n>>> GENERATING EXTENDED DIAGNOSTIC PLOTS <<<")
+            print(f"Including staleness analysis for {len(detection_results)} units")
+            print(f"Verified anomalies: {verified_anomalies_found}")
+
+            try:
+                # Generate standard anomaly-triggered plots
+                if verified_anomalies_found > 0:
+                    plot_session_dir = generate_anomaly_plots(detection_results)
+                    print(f"Anomaly plots location: {plot_session_dir}")
+
+                # EXTENDED STALENESS PLOTS DISABLED - Not needed, creates unnecessary visualizations
+                # Old system generated multi-panel staleness analysis plots for all units
+                # New system focuses only on verified anomalies with clean diagnostic plots
+                # self._generate_extended_staleness_plots(detection_results)
+
+                print(f"\n>>> ANOMALY DETECTION COMPLETED <<<")
+                if verified_anomalies_found > 0:
+                    print(f"  - Anomaly plots generated: {verified_anomalies_found} verified anomalies")
+                    print(f"  - Consolidated PDF: Available in report directory")
+                else:
+                    print(f"  - No recent (<24h) verified anomalies detected")
+                    print(f"  - All systems operating normally")
+                print(f"  - Instrumentation anomalies highlighted")
+
+                # TIMING SUMMARY TABLE
+                self._print_timing_summary(detection_results)
+
+            except Exception as e:
+                print(f"ERROR in plot generation: {e}")
+        else:
+            print(f"\n>>> NO DATA AVAILABLE FOR PLOTTING <<<")
+            print("No units available for analysis")
+
+    def _generate_extended_staleness_plots(self, detection_results: dict):
+        """Generate extended plots and save under the master scan folder structure.
+
+        Master folder: reports/DD-MM-YYYY_HH-MMAM
+        Unit folder:   reports/<scan-folder>/<UNIT>
+        File:          EXTENDED_<UNIT>_<timestamp>.png
+        """
+        import matplotlib.pyplot as plt
+        from datetime import datetime
+        import pandas as pd
+        from pi_monitor.plot_controls import build_scan_root_dir, ensure_unit_dir
+
+        print("  Generating extended staleness plots...")
+
+        # Create or reuse the day-of-scan master folder
+        scan_root = build_scan_root_dir(Path("reports"))
+        scan_root.mkdir(parents=True, exist_ok=True)
+
+        for unit, results in detection_results.items():
+            try:
+                print(f"    Plotting {unit}...")
+
+                # Get full unit data (no time restrictions)
+                df = self.db.get_unit_data(unit)
+                if df.empty:
+                    continue
+
+                # Convert time column
+                df['time'] = pd.to_datetime(df['time'])
+
+                # Get extended freshness info
+                extended_freshness = results.get('extended_freshness', {})
+                staleness_cat = extended_freshness.get('staleness_category', {})
+                hours_stale = extended_freshness.get('hours_since_latest', 0)
+
+                # Get plant-specific handling info
+                handling = self.scanner._get_plant_specific_handling(unit)
+                plant_type = handling.get('plant_type', 'unknown')
+
+                # Create comprehensive plot
+                fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+                fig.suptitle(f'{unit} Extended Analysis - Latest Data Regardless of Staleness', fontsize=16)
+
+                # Plot 1: Recent data timeline (last 7 days)
+                ax1 = axes[0, 0]
+                recent_cutoff = datetime.now() - pd.Timedelta(days=7)
+                recent_df = df[df['time'] >= recent_cutoff]
+
+                if not recent_df.empty and 'tag' in recent_df.columns:
+                    # Plot sample tags
+                    sample_tags = recent_df['tag'].unique()[:5]
+                    for tag in sample_tags:
+                        tag_data = recent_df[recent_df['tag'] == tag]
+                        if len(tag_data) > 0:
+                            ax1.plot(tag_data['time'], tag_data['value'],
+                                   alpha=0.7, label=tag[:20] + '...' if len(tag) > 20 else tag)
+
+                ax1.set_title('Recent Data (Last 7 Days) - No Staleness Cutoff')
+                ax1.set_xlabel('Time')
+                ax1.set_ylabel('Value')
+                ax1.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+                ax1.grid(True, alpha=0.3)
+
+                # Plot 2: Staleness Analysis
+                ax2 = axes[0, 1]
+                staleness_level = staleness_cat.get('level', 'unknown')
+                severity = staleness_cat.get('severity', 'none')
+
+                # Staleness visualization
+                colors = {'fresh': 'green', 'mildly_stale': 'yellow', 'stale': 'orange',
+                         'very_stale': 'red', 'extremely_stale': 'darkred'}
+                color = colors.get(staleness_level, 'gray')
+
+                ax2.bar(['Data Staleness'], [hours_stale], color=color, alpha=0.7)
+                ax2.set_title(f'Staleness Analysis\n{staleness_level.replace("_", " ").title()} ({severity})')
+                ax2.set_ylabel('Hours Since Latest Data')
+
+                # Add threshold lines
+                ax2.axhline(y=1, color='green', linestyle='--', alpha=0.5, label='Fresh (1h)')
+                ax2.axhline(y=6, color='yellow', linestyle='--', alpha=0.5, label='Mildly Stale (6h)')
+                ax2.axhline(y=24, color='orange', linestyle='--', alpha=0.5, label='Stale (24h)')
+                ax2.axhline(y=168, color='red', linestyle='--', alpha=0.5, label='Very Stale (7d)')
+                ax2.legend()
+
+                # Plot 3: Plant Configuration
+                ax3 = axes[1, 0]
+                timeout_settings = handling.get('timeout_settings', {})
+                fetch_timeout = timeout_settings.get('PI_FETCH_TIMEOUT', 0)
+                settle_seconds = timeout_settings.get('settle_seconds', 0)
+
+                config_data = [fetch_timeout, settle_seconds * 10]  # Scale settle_seconds for visibility
+                config_labels = ['PI Fetch Timeout (s)', 'Settle Time (x10)']
+
+                ax3.bar(config_labels, config_data, color=['blue', 'cyan'], alpha=0.7)
+                ax3.set_title(f'Plant Configuration ({plant_type})')
+                ax3.set_ylabel('Seconds')
+
+                # Plot 4: Data Summary
+                ax4 = axes[1, 1]
+                total_records = len(df)
+                unique_tags = df['tag'].nunique() if 'tag' in df.columns else 0
+                inst_anomalies = len(results.get('instrumentation_anomalies', {}))
+                total_anomalies = results.get('total_anomalies', 0)
+
+                summary_data = [total_records/1000, unique_tags, inst_anomalies, total_anomalies]
+                summary_labels = ['Records (K)', 'Tags', 'Inst. Anomalies', 'Total Anomalies']
+
+                bars = ax4.bar(summary_labels, summary_data,
+                              color=['lightblue', 'lightgreen', 'lightcoral', 'lightyellow'])
+                ax4.set_title('Unit Summary')
+                ax4.set_ylabel('Count')
+
+                # Add value labels on bars
+                for bar, value in zip(bars, summary_data):
+                    height = bar.get_height()
+                    ax4.text(bar.get_x() + bar.get_width()/2., height,
+                            f'{value:.0f}', ha='center', va='bottom')
+
+                plt.tight_layout()
+
+                # Save plot under master scan root in unit subfolder
+                unit_dir = ensure_unit_dir(scan_root, unit)
+                plot_file = unit_dir / f"EXTENDED_{unit}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+                plt.savefig(plot_file, dpi=150, bbox_inches='tight')
+                plt.close()
+
+                print(f"      Saved: {plot_file}")
+
+            except Exception as e:
+                print(f"      Error plotting {unit}: {e}")
+
+        print(f"  Extended plots saved under: {scan_root}")
+
     def show_database_overview(self):
         """Show complete database overview"""
         if not self._check_data_available():
@@ -1663,7 +2372,186 @@ class TurbopredictSystem:
                 print(f"{name:<20} {status_text:<12} {details:<35}")
         
         print("+" + "=" * 70 + "+")
-    
+
+    def run_conditional_plotting(self):
+        """Run conditional plotting with minimal change detection"""
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> LAUNCHING CONDITIONAL PLOTTING SYSTEM <<<" + Style.RESET_ALL)
+            else:
+                print(">>> LAUNCHING CONDITIONAL PLOTTING SYSTEM <<<")
+
+            # Import the conditional plotting module
+            import importlib
+            try:
+                conditional_plot = importlib.import_module('enhanced_plot_conditional')
+
+                # Get available units
+                units = self.db.get_all_units()
+
+                if not units:
+                    print("No units available for plotting")
+                    return
+
+                # Ask user for change threshold
+                print(f"\nAvailable units: {', '.join(units)}")
+                try:
+                    threshold = input("Enter minimal change threshold % (default 0.5): ").strip()
+                    if not threshold:
+                        threshold = 0.5
+                    else:
+                        threshold = float(threshold)
+
+                    print(f"\nGenerating conditional plots with {threshold}% change threshold...")
+                    output_dir = conditional_plot.create_conditional_enhanced_plots(change_threshold=threshold)
+                    print(f"\nConditional plotting completed!")
+                    print(f"Output directory: {output_dir}")
+                    print("Check reports/ directory for plots with minimal change markers.")
+
+                except EOFError:
+                    print("Non-interactive mode: using default 0.5% threshold")
+                    output_dir = conditional_plot.create_conditional_enhanced_plots(change_threshold=0.5)
+                    print(f"Conditional plots generated in: {output_dir}")
+                except ValueError:
+                    print("Invalid threshold value, using default 0.5%")
+                    output_dir = conditional_plot.create_conditional_enhanced_plots(change_threshold=0.5)
+
+            except ImportError as e:
+                print(f"Enhanced conditional plotting module not available: {e}")
+                print("Please ensure enhanced_plot_conditional.py is in the project directory")
+
+        except Exception as e:
+            print(f"Conditional plotting failed: {e}")
+
+    def run_tag_state_dashboard(self):
+        """Run comprehensive tag state dashboard"""
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> LAUNCHING TAG STATE DASHBOARD <<<" + Style.RESET_ALL)
+            else:
+                print(">>> LAUNCHING TAG STATE DASHBOARD <<<")
+
+            # Import the tag state dashboard module
+            try:
+                from pi_monitor.tag_state_dashboard import TagStateDashboard
+
+                dashboard = TagStateDashboard()
+
+                # Get available units
+                units = self.db.get_all_units()
+
+                if not units:
+                    print("No units available for dashboard")
+                    return
+
+                # Ask user to select unit
+                print(f"\nAvailable units: {', '.join(units)}")
+                try:
+                    unit = input("Enter unit for tag state analysis: ").strip()
+                    if unit not in units:
+                        print(f"Unit '{unit}' not found")
+                        return
+
+                    # Get comprehensive tag states
+                    print(f"\nAnalyzing tag states for {unit}...")
+                    tag_states = dashboard.get_comprehensive_tag_states(unit, hours_back=24)
+
+                    # Display results
+                    print(f"\n=== TAG STATE DASHBOARD: {unit} ===")
+                    print(f"Analysis period: Last 24 hours")
+                    print(f"Total tags analyzed: {tag_states.get('total_tags', 0)}")
+                    print(f"Active tags: {tag_states.get('active_tags', 0)}")
+                    print(f"Stale tags: {tag_states.get('stale_tags', 0)}")
+                    print(f"Anomalous tags: {tag_states.get('anomalous_tags', 0)}")
+
+                    # Show tag details
+                    if 'tag_details' in tag_states:
+                        print(f"\nTOP TAG ISSUES:")
+                        for i, tag_info in enumerate(tag_states['tag_details'][:10], 1):
+                            print(f"{i:2d}. {tag_info['tag']}")
+                            print(f"     Status: {tag_info.get('status', 'Unknown')}")
+                            print(f"     Last update: {tag_info.get('last_update', 'Unknown')}")
+                            if 'anomaly_rate' in tag_info:
+                                print(f"     Anomaly rate: {tag_info['anomaly_rate']:.1%}")
+
+                except EOFError:
+                    print("Non-interactive mode: analyzing first unit")
+                    unit = units[0]
+                    tag_states = dashboard.get_comprehensive_tag_states(unit, hours_back=24)
+                    print(f"Tag state analysis completed for {unit}")
+
+            except ImportError as e:
+                print(f"Tag state dashboard module not available: {e}")
+                print("Please ensure pi_monitor/tag_state_dashboard.py is available")
+
+        except Exception as e:
+            print(f"Tag state dashboard failed: {e}")
+
+    def run_incident_reporter(self):
+        """Run WHO-WHAT-WHEN-WHERE incident reporting system"""
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> LAUNCHING INCIDENT REPORTING SYSTEM <<<" + Style.RESET_ALL)
+            else:
+                print(">>> LAUNCHING INCIDENT REPORTING SYSTEM <<<")
+
+            # Import the incident reporter module
+            import importlib
+            import subprocess
+            try:
+                # Get available units
+                units = self.db.get_all_units()
+
+                if not units:
+                    print("No units available for incident reporting")
+                    return
+
+                # Ask user to select unit and timeframe
+                print(f"\nAvailable units: {', '.join(units)}")
+                try:
+                    unit = input("Enter unit for incident report: ").strip()
+                    if unit not in units:
+                        print(f"Unit '{unit}' not found")
+                        return
+
+                    hours = input("Enter hours back to analyze (default 24): ").strip()
+                    if not hours:
+                        hours = "24"
+
+                    # Run the incident reporter script
+                    print(f"\nGenerating incident report for {unit} (last {hours} hours)...")
+                    result = subprocess.run([
+                        'python', 'scripts/anomaly_incident_reporter.py',
+                        '--unit', unit,
+                        '--hours', hours
+                    ], capture_output=True, text=True)
+
+                    if result.returncode == 0:
+                        print("Incident report generated successfully!")
+                        print("Check reports/ directory for the detailed incident report.")
+                        if result.stdout:
+                            print("\nReport summary:")
+                            print(result.stdout)
+                    else:
+                        print(f"Incident report generation failed: {result.stderr}")
+
+                except EOFError:
+                    print("Non-interactive mode: generating report for first unit")
+                    unit = units[0]
+                    result = subprocess.run([
+                        'python', 'scripts/anomaly_incident_reporter.py',
+                        '--unit', unit,
+                        '--hours', '24'
+                    ], capture_output=True, text=True)
+                    print(f"Incident report generated for {unit}")
+
+            except Exception as e:
+                print(f"Failed to run incident reporter: {e}")
+                print("Please ensure scripts/anomaly_incident_reporter.py is available")
+
+        except Exception as e:
+            print(f"Incident reporting failed: {e}")
+
     def shutdown_system(self):
         """Shutdown the unified system"""
         if self.console:
@@ -1714,7 +2602,100 @@ class TurbopredictSystem:
                 input("Press Enter to continue...")
             return False
         return True
-    
+
+    def _print_timing_summary(self, detection_results: dict):
+        """Print comprehensive timing summary for all units analyzed."""
+        print(f"\n{'=' * 100}")
+        print(f"{'PERFORMANCE TIMING SUMMARY':^100}")
+        print(f"{'=' * 100}")
+
+        # Table header
+        print(f"{'Unit':<15} {'Records':<12} {'Data Fetch':<12} {'Detection':<12} {'Plotting':<12} {'Total':<12}")
+        print(f"{'-' * 100}")
+
+        # Per-unit timing
+        total_fetch_time = 0.0
+        total_detection_time = 0.0
+        total_plotting_time = 0.0
+        total_time = 0.0
+        total_records = 0
+        units_with_timing = 0
+
+        for unit, results in sorted(detection_results.items()):
+            if not isinstance(results, dict):
+                continue
+
+            timing = results.get('timing', {})
+            if not timing:
+                continue
+
+            units_with_timing += 1
+
+            # Extract timing data
+            fetch_time = timing.get('data_fetch_seconds', 0)
+            detection_time = timing.get('anomaly_detection_seconds', 0)
+            plotting_time = timing.get('plotting_seconds', 0)
+            unit_total_time = timing.get('total_seconds', 0)
+
+            # Get record count
+            records = results.get('records', 0)
+
+            # Format times
+            fetch_str = f"{fetch_time:.2f}s"
+            detection_str = f"{detection_time:.2f}s"
+            plotting_str = f"{plotting_time:.2f}s" if plotting_time > 0 else "N/A"
+            total_str = f"{unit_total_time:.2f}s"
+            records_str = f"{records:,}"
+
+            # Print row
+            print(f"{unit:<15} {records_str:<12} {fetch_str:<12} {detection_str:<12} {plotting_str:<12} {total_str:<12}")
+
+            # Accumulate totals
+            total_fetch_time += fetch_time
+            total_detection_time += detection_time
+            total_plotting_time += plotting_time
+            total_time += unit_total_time
+            total_records += records
+
+        # Summary row
+        print(f"{'-' * 100}")
+        fetch_str = f"{total_fetch_time:.2f}s"
+        detection_str = f"{total_detection_time:.2f}s"
+        plotting_str = f"{total_plotting_time:.2f}s" if total_plotting_time > 0 else "N/A"
+        total_str = f"{total_time:.2f}s"
+        records_str = f"{total_records:,}"
+
+        print(f"{'TOTAL':<15} {records_str:<12} {fetch_str:<12} {detection_str:<12} {plotting_str:<12} {total_str:<12}")
+
+        # Performance metrics
+        print(f"\n{'PERFORMANCE METRICS':^100}")
+        print(f"{'-' * 100}")
+        print(f"Total analysis time: {total_time:.2f}s ({total_time/60:.2f} minutes)")
+        print(f"Units analyzed: {units_with_timing}")
+        print(f"Total records processed: {total_records:,}")
+
+        if units_with_timing > 0:
+            avg_time_per_unit = total_time / units_with_timing
+            print(f"Average time per unit: {avg_time_per_unit:.2f}s")
+
+        if total_records > 0:
+            records_per_second = total_records / total_time if total_time > 0 else 0
+            print(f"Processing rate: {records_per_second:,.0f} records/second")
+
+        # Time breakdown percentages
+        if total_time > 0:
+            print(f"\nTime breakdown:")
+            fetch_pct = (total_fetch_time / total_time) * 100
+            detection_pct = (total_detection_time / total_time) * 100
+            plotting_pct = (total_plotting_time / total_time) * 100 if total_plotting_time > 0 else 0
+
+            print(f"  Data fetch: {fetch_pct:.1f}%")
+            print(f"  Anomaly detection: {detection_pct:.1f}%")
+            if total_plotting_time > 0:
+                print(f"  Plotting: {plotting_pct:.1f}%")
+
+        print(f"{'=' * 100}\n")
+
     def _show_error(self, message):
         """Show error message"""
         if self.console:
@@ -1843,6 +2824,8 @@ class TurbopredictSystem:
                     
                     # Create plots for top problematic tags
                     for i, (tag, tag_info) in enumerate(top_tags):
+                        # Normalize tag id to string to avoid 'float' subscripting/len errors
+                        tag = str(tag)
                         try:
                             self._create_enhanced_tag_plot(unit, tag, tag_info, recent_data, unit_dir)
                             plot_count += 1
@@ -2075,6 +3058,95 @@ IF Count: {iso_count}"""
                 # Fallback for Windows encoding issues
                 print(f">>> CRITICAL SYSTEM ERROR: {str(e).encode('ascii', 'replace').decode('ascii')} <<<")
 
+    def run_data_health_check(self):
+        """Run data health check on all units"""
+        if not self._check_data_available():
+            return
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> DATA HEALTH CHECK <<<" + Style.RESET_ALL)
+            else:
+                print(">>> DATA HEALTH CHECK <<<")
+            script_path = Path(__file__).parent / "scripts" / "check_unit_data_health.py"
+            if script_path.exists():
+                subprocess.run([sys.executable, str(script_path)], check=False)
+            else:
+                print(f"[X] Script not found: {script_path}")
+        except Exception as e:
+            print(f"Error in data health check: {e}")
+        input("\nPress Enter to continue...")
+
+    def run_incremental_refresh(self):
+        """Run incremental refresh (all plants: PCFS, ABF, PCMSB)"""
+        if not self._check_data_available():
+            return
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> INCREMENTAL REFRESH - ALL PLANTS <<<" + Style.RESET_ALL)
+                print(Fore.CYAN + "PCFS (4 units) + ABF (1 unit) + PCMSB (8 units)" + Style.RESET_ALL)
+                print(Fore.CYAN + "Exact timestamp matching - no data gaps..." + Style.RESET_ALL)
+                # Indicate Web API primary if configured
+                try:
+                    import os as _os
+                    if _os.getenv('PI_WEBAPI_URL'):
+                        print(Fore.CYAN + f"Using PI Web API primary: {_os.getenv('PI_WEBAPI_URL')} (polite parallel)" + Style.RESET_ALL)
+                except Exception:
+                    pass
+            else:
+                print(">>> INCREMENTAL REFRESH - ALL PLANTS <<<")
+                print("PCFS (4 units) + ABF (1 unit) + PCMSB (8 units)")
+                print("Exact timestamp matching - no data gaps...")
+                try:
+                    import os as _os
+                    if _os.getenv('PI_WEBAPI_URL'):
+                        print(f"Using PI Web API primary: {_os.getenv('PI_WEBAPI_URL')} (polite parallel)")
+                except Exception:
+                    pass
+            # Use smart incremental refresh (only refreshes stale units)
+            script_path = Path(__file__).parent / "scripts" / "smart_incremental_refresh.py"
+            if script_path.exists():
+                subprocess.run([sys.executable, str(script_path)], check=False)
+            else:
+                print(f"[X] Script not found: {script_path}")
+                print("Falling back to simple refresh...")
+                fallback_script = Path(__file__).parent / "scripts" / "simple_incremental_refresh.py"
+                if fallback_script.exists():
+                    subprocess.run([sys.executable, str(fallback_script)], check=False)
+        except Exception as e:
+            print(f"Error in incremental refresh: {e}")
+        input("\nPress Enter to continue...")
+
+    def run_unit_data_analysis(self):
+        """Run detailed unit data analysis"""
+        if not self._check_data_available():
+            return
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> UNIT DATA ANALYSIS <<<" + Style.RESET_ALL)
+            else:
+                print(">>> UNIT DATA ANALYSIS <<<")
+            print("\n1. Compare all units")
+            print("2. Analyze specific unit")
+            print("3. Analyze all units (detailed)")
+            print("0. Back to main menu")
+            choice = input("\nSelect option: ").strip()
+            script_path = Path(__file__).parent / "scripts" / "analyze_unit_data.py"
+            if not script_path.exists():
+                print(f"[X] Script not found: {script_path}")
+                input("\nPress Enter to continue...")
+                return
+            if choice == "1":
+                subprocess.run([sys.executable, str(script_path), "--compare"], check=False)
+            elif choice == "2":
+                unit = input("\nEnter unit (e.g., K-31-01): ").strip()
+                if unit:
+                    subprocess.run([sys.executable, str(script_path), "--unit", unit, "--show-tags"], check=False)
+            elif choice == "3":
+                subprocess.run([sys.executable, str(script_path), "--all"], check=False)
+        except Exception as e:
+            print(f"Error in unit data analysis: {e}")
+        input("\nPress Enter to continue...")
+
 
 def run_auto_refresh_scan():
     """API function for automated loops - returns status"""
@@ -2150,7 +3222,563 @@ def run_continuous_monitoring(interval_hours=1):
             print(Fore.RED + f"\n>>> MONITORING FAILED: {e} <<<" + Style.RESET_ALL)
         else:
             print(f"\n>>> MONITORING FAILED: {e} <<<")
-    
+    def run_controlled_plots(self):
+        """Run controlled plotting with smart limits"""
+        try:
+            print("CONTROLLED PLOT GENERATION")
+            print("=" * 50)
+            print("This will create plots with intelligent limits:")
+            print("• Maximum 5 plots per unit")
+            print("• Maximum 8 priority units per report")
+            print("• Focus on most problematic tags only")
+            print("• Automatic cleanup of old reports")
+            print()
+
+            # Import and run controlled plotting
+            from controlled_anomaly_plots import create_controlled_plots
+            from pi_monitor.plot_controls import PlotController
+
+            controller = PlotController()
+
+            if COLORAMA_AVAILABLE:
+                print(Fore.CYAN + "Starting controlled analysis..." + Style.RESET_ALL)
+            else:
+                print("Starting controlled analysis...")
+
+            report_path = create_controlled_plots(controller)
+
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + f"Controlled analysis completed!" + Style.RESET_ALL)
+                print(Fore.YELLOW + f"Report location: {report_path}" + Style.RESET_ALL)
+            else:
+                print("Controlled analysis completed!")
+                print(f"Report location: {report_path}")
+
+        except Exception as e:
+            print(f"Error in controlled plotting: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("Press Enter to continue...")
+
+    def cleanup_reports(self):
+        """Clean up old report directories"""
+        try:
+            print("REPORT CLEANUP UTILITY")
+            print("=" * 50)
+
+            from pi_monitor.plot_controls import PlotController
+            from pathlib import Path
+
+            controller = PlotController()
+            reports_dir = Path("reports")
+
+            if not reports_dir.exists():
+                print("No reports directory found.")
+                input("Press Enter to continue...")
+                return
+
+            # Check current usage
+            excessive = controller.check_disk_usage_alert(reports_dir)
+            if excessive:
+                if COLORAMA_AVAILABLE:
+                    print(Fore.RED + "Report disk usage is excessive!" + Style.RESET_ALL)
+                else:
+                    print("Report disk usage is excessive!")
+
+            print("Current report directories:")
+            report_dirs = [d for d in reports_dir.iterdir() if d.is_dir()]
+            report_dirs.sort(key=lambda x: x.stat().st_mtime, reverse=True)
+
+            for i, report_dir in enumerate(report_dirs[:10]):
+                try:
+                    files = list(report_dir.glob('**/*'))
+                    file_count = len([f for f in files if f.is_file()])
+                    size_mb = sum(f.stat().st_size for f in files if f.is_file()) / (1024 * 1024)
+                    mtime = datetime.fromtimestamp(report_dir.stat().st_mtime)
+                    print(f"  {i+1:2d}. {report_dir.name}")
+                    print(f"      Created: {mtime.strftime('%Y-%m-%d %H:%M')}")
+                    print(f"      Files: {file_count:,} | Size: {size_mb:.1f}MB")
+                except:
+                    print(f"  {i+1:2d}. {report_dir.name} (error reading)")
+
+            if len(report_dirs) > 10:
+                print(f"      ... and {len(report_dirs) - 10} more directories")
+
+            print()
+            try:
+                response = input("Run cleanup? (y/N): ").strip().lower()
+            except EOFError:
+                return
+
+            if response == 'y':
+                print("Running cleanup...")
+                stats = controller.cleanup_old_reports(reports_dir)
+
+                print(f"Cleanup completed!")
+                print(f"  Directories removed: {stats['cleaned']}")
+                print(f"  Space reclaimed: {stats['space_reclaimed_mb']:.1f}MB")
+
+                if stats['errors']:
+                    print(f"  Errors: {len(stats['errors'])}")
+            else:
+                print("Cleanup cancelled.")
+
+        except Exception as e:
+            print(f"Error in cleanup: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("Press Enter to continue...")
+
+    def run_data_health_check(self):
+        """Run data health check on all units"""
+        if not self._check_data_available():
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> DATA HEALTH CHECK <<<" + Style.RESET_ALL)
+                print(Fore.CYAN + "Checking unit data freshness and quality..." + Style.RESET_ALL)
+            else:
+                print(">>> DATA HEALTH CHECK <<<")
+                print("Checking unit data freshness and quality...")
+
+            # Run health check script
+            script_path = Path(__file__).parent / "scripts" / "check_unit_data_health.py"
+            if script_path.exists():
+                subprocess.run([sys.executable, str(script_path)], check=False)
+            else:
+                print(f"[X] Script not found: {script_path}")
+
+        except Exception as e:
+            print(f"Error in data health check: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("\nPress Enter to continue...")
+
+    def run_incremental_refresh(self):
+        """Run incremental refresh (safe PI DataLink settings)"""
+        if not self._check_data_available():
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.CYAN + "\n╔" + "═" * 68 + "╗" + Style.RESET_ALL)
+                print(Fore.CYAN + "║" + Fore.MAGENTA + Style.BRIGHT + "  INCREMENTAL REFRESH - SMART MODE".center(68) + Fore.CYAN + "║" + Style.RESET_ALL)
+                print(Fore.CYAN + "║" + Fore.YELLOW + "  Fetches only missing data since last timestamp".center(68) + Fore.CYAN + "║" + Style.RESET_ALL)
+                print(Fore.CYAN + "╚" + "═" * 68 + "╝" + Style.RESET_ALL)
+            else:
+                print("\n" + "=" * 70)
+                print("  INCREMENTAL REFRESH - SMART MODE")
+                print("  Fetches only missing data since last timestamp")
+                print("=" * 70)
+
+            # Use the new ParquetAutoScanner incremental refresh (default)
+            import os as _os_opt
+            max_age = float(_os_opt.getenv('OPTION1_MAX_AGE_HOURS', '8'))
+
+            print(f"\nScanning database for stale units (max age: {max_age}h)...")
+
+            # Call the scanner's refresh method which now uses incremental logic
+            self.scanner.refresh_stale_units_with_progress(max_age_hours=max_age)
+
+        except Exception as e:
+            print(f"Error in incremental refresh: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("\nPress Enter to continue...")
+
+    def run_unit_data_analysis(self):
+        """Run detailed unit data analysis"""
+        if not self._check_data_available():
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> UNIT DATA ANALYSIS <<<" + Style.RESET_ALL)
+            else:
+                print(">>> UNIT DATA ANALYSIS <<<")
+
+            print("\n1. Compare all units")
+            print("2. Analyze specific unit")
+            print("3. Analyze all units (detailed)")
+            print("0. Back to main menu")
+
+            choice = input("\nSelect option: ").strip()
+
+            script_path = Path(__file__).parent / "scripts" / "analyze_unit_data.py"
+            if not script_path.exists():
+                print(f"[X] Script not found: {script_path}")
+                input("\nPress Enter to continue...")
+                return
+
+            if choice == "1":
+                subprocess.run([sys.executable, str(script_path), "--compare"], check=False)
+            elif choice == "2":
+                unit = input("\nEnter unit (e.g., K-31-01): ").strip()
+                if unit:
+                    subprocess.run([sys.executable, str(script_path), "--unit", unit, "--show-tags"], check=False)
+            elif choice == "3":
+                subprocess.run([sys.executable, str(script_path), "--all"], check=False)
+            elif choice == "0":
+                return
+
+        except Exception as e:
+            print(f"Error in unit data analysis: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("\nPress Enter to continue...")
+
+    def run_speed_aware_analysis(self):
+        """Run speed-aware analysis interface"""
+        if not self._check_data_available():
+            return
+
+        if not hasattr(self, 'speed_aware_available') or not self.speed_aware_available:
+            print("Speed-aware analysis not available. Speed compensation modules not loaded.")
+            input("Press Enter to continue...")
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> SPEED-AWARE ANALYSIS SYSTEM <<<" + Style.RESET_ALL)
+            else:
+                print(">>> SPEED-AWARE ANALYSIS SYSTEM <<<")
+
+            # Show speed-aware menu
+            print(self.speed_interface.get_speed_aware_menu())
+
+            # Get user choice
+            try:
+                choice = input(">>> SELECT SPEED-AWARE OPTION: ").strip()
+            except EOFError:
+                return
+
+            if choice.upper() in ['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9']:
+                # For S1 and S2, prompt for unit if needed
+                unit = None
+                if choice.upper() in ['S1', 'S2', 'S4']:
+                    try:
+                        unit = input("Enter unit (format: PLANT.UNIT, e.g., PCFS.K-12-01): ").strip()
+                    except EOFError:
+                        return
+
+                # Execute speed-aware command
+                result = self.speed_interface.handle_speed_aware_command(choice, unit)
+                print("\n" + result)
+            else:
+                print("Invalid choice. Please select S1-S9.")
+
+        except Exception as e:
+            print(f"Error in speed-aware analysis: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("Press Enter to continue...")
+
+    def run_speed_tag_monitor(self):
+        """Run speed tag monitoring"""
+        if not self._check_data_available():
+            return
+
+        if not hasattr(self, 'speed_aware_available') or not self.speed_aware_available:
+            print("Speed tag monitoring not available. Speed compensation modules not loaded.")
+            input("Press Enter to continue...")
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> SPEED TAG MONITORING <<<" + Style.RESET_ALL)
+            else:
+                print(">>> SPEED TAG MONITORING <<<")
+
+            # Execute speed tag monitoring
+            result = self.speed_interface.handle_speed_aware_command("S3")
+            print("\n" + result)
+
+            # Show speed system status
+            status = self.speed_interface.get_speed_status_summary()
+            print(f"\nSPEED SYSTEM STATUS:")
+            print(f"  Total Units: {status.get('total_units', 0)}")
+            print(f"  Enabled Units: {status.get('enabled_units', 0)}")
+            print(f"  Total Speed Tags: {status.get('total_speed_tags', 0)}")
+            print(f"  System Ready: {'Yes' if status.get('system_ready', False) else 'No'}")
+
+        except Exception as e:
+            print(f"Error in speed tag monitoring: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("Press Enter to continue...")
+
+    def run_batch_speed_analysis(self):
+        """Run batch speed analysis across all units"""
+        if not self._check_data_available():
+            return
+
+        if not hasattr(self, 'speed_aware_available') or not self.speed_aware_available:
+            print("Batch speed analysis not available. Speed compensation modules not loaded.")
+            input("Press Enter to continue...")
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> BATCH SPEED-AWARE ANALYSIS <<<" + Style.RESET_ALL)
+                print(Fore.CYAN + "Analyzing all units with speed compensation..." + Style.RESET_ALL)
+            else:
+                print(">>> BATCH SPEED-AWARE ANALYSIS <<<")
+                print("Analyzing all units with speed compensation...")
+
+            # Execute batch speed analysis
+            result = self.speed_interface.handle_speed_aware_command("S6")
+            print("\n" + result)
+
+            # Offer to export report
+            try:
+                export_choice = input("\nExport detailed report? (y/n): ").strip().lower()
+                if export_choice == 'y':
+                    export_result = self.speed_interface.handle_speed_aware_command("S7")
+                    print("\n" + export_result)
+            except EOFError:
+                pass
+
+        except Exception as e:
+            print(f"Error in batch speed analysis: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("Press Enter to continue...")
+
+    def run_data_health_check(self):
+        """Run data health check on all units"""
+        if not self._check_data_available():
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> DATA HEALTH CHECK <<<" + Style.RESET_ALL)
+                print(Fore.CYAN + "Checking unit data freshness and quality..." + Style.RESET_ALL)
+            else:
+                print(">>> DATA HEALTH CHECK <<<")
+                print("Checking unit data freshness and quality...")
+
+            # Run health check script
+            script_path = Path(__file__).parent / "scripts" / "check_unit_data_health.py"
+            if script_path.exists():
+                subprocess.run([sys.executable, str(script_path)], check=False)
+            else:
+                print(f"[X] Script not found: {script_path}")
+
+        except Exception as e:
+            print(f"Error in data health check: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("\nPress Enter to continue...")
+
+    def run_incremental_refresh(self):
+        """Run incremental refresh (safe PI DataLink settings)"""
+        if not self._check_data_available():
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> INCREMENTAL REFRESH - SAFE MODE <<<" + Style.RESET_ALL)
+                print(Fore.CYAN + "Using extended PI DataLink timeouts and relative time windows" + Style.RESET_ALL)
+            else:
+                print(">>> INCREMENTAL REFRESH - SAFE MODE <<<")
+                print("Using extended PI DataLink timeouts and relative time windows")
+
+            # Run incremental refresh script
+            script_path = Path(__file__).parent / "scripts" / "incremental_refresh_safe.py"
+            if script_path.exists():
+                subprocess.run([sys.executable, str(script_path)], check=False)
+            else:
+                print(f"[X] Script not found: {script_path}")
+
+        except Exception as e:
+            print(f"Error in incremental refresh: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("\nPress Enter to continue...")
+
+    def run_unit_data_analysis(self):
+        """Run detailed unit data analysis"""
+        if not self._check_data_available():
+            return
+
+        try:
+            if COLORAMA_AVAILABLE:
+                print(Fore.GREEN + ">>> UNIT DATA ANALYSIS <<<" + Style.RESET_ALL)
+            else:
+                print(">>> UNIT DATA ANALYSIS <<<")
+
+            print("\n1. Compare all units")
+            print("2. Analyze specific unit")
+            print("3. Analyze all units (detailed)")
+            print("0. Back to main menu")
+
+            choice = input("\nSelect option: ").strip()
+
+            script_path = Path(__file__).parent / "scripts" / "analyze_unit_data.py"
+            if not script_path.exists():
+                print(f"[X] Script not found: {script_path}")
+                input("\nPress Enter to continue...")
+                return
+
+            if choice == "1":
+                subprocess.run([sys.executable, str(script_path), "--compare"], check=False)
+            elif choice == "2":
+                unit = input("\nEnter unit (e.g., K-31-01): ").strip()
+                if unit:
+                    subprocess.run([sys.executable, str(script_path), "--unit", unit, "--show-tags"], check=False)
+            elif choice == "3":
+                subprocess.run([sys.executable, str(script_path), "--all"], check=False)
+            elif choice == "0":
+                return
+
+        except Exception as e:
+            print(f"Error in unit data analysis: {e}")
+            import traceback
+            traceback.print_exc()
+
+        input("\nPress Enter to continue...")
+
+    def _analyze_unit_with_speed_awareness(self, unit: str, speed_aware_enabled: bool) -> Dict[str, Any]:
+        """Analyze unit with optional speed-aware functionality
+
+        Args:
+            unit: Unit identifier
+            speed_aware_enabled: Whether speed-aware analysis is available
+
+        Returns:
+            Enhanced analysis results with speed-aware data if applicable
+        """
+        try:
+            # Start with standard analysis
+            analysis = self.scanner.analyze_unit_data(unit, run_anomaly_detection=True)
+
+            if not speed_aware_enabled or not hasattr(self, 'speed_interface'):
+                return analysis
+
+            # Try to apply speed-aware enhancement
+            try:
+                # Parse unit identifier to plant.unit format
+                plant, unit_name = self._parse_unit_identifier(unit)
+                if plant is None or unit_name is None:
+                    return analysis
+
+                # Check if this unit is speed-aware capable
+                if not self.speed_interface.compensator.is_speed_aware_enabled(plant, unit_name):
+                    return analysis
+
+                # Get unit data for speed-aware analysis (with time window for performance)
+                # Use recent data window to improve performance for large datasets
+                end_time = datetime.now()
+                start_time = end_time - timedelta(days=7)  # Use last 7 days for speed-aware analysis (performance optimization)
+                unit_data = self.db.get_unit_data(unit, start_time=start_time, end_time=end_time)
+                if unit_data.empty:
+                    return analysis
+
+                # Performance safeguard: sample large datasets to prevent memory issues
+                max_records = 500000  # 500K records max for speed-aware analysis
+                if len(unit_data) > max_records:
+                    logger.warning(f"Large dataset for {unit}: {len(unit_data):,} records, sampling to {max_records:,}")
+                    # Sample evenly across the time range
+                    unit_data = unit_data.sample(n=max_records, random_state=42).sort_values('time' if 'time' in unit_data.columns else 'timestamp')
+
+                # Perform speed-aware anomaly detection
+                logger.info(f"Speed-aware analysis for {unit}: processing {len(unit_data):,} records from last 7 days")
+                speed_result = self.speed_interface.anomaly_detector.detect_speed_aware_anomalies(
+                    unit_data, plant, unit_name
+                )
+
+                # Add speed-aware analysis to the results
+                analysis['speed_aware_analysis'] = {
+                    'compensation_applied': speed_result.speed_compensation_result.method_used != "none",
+                    'compensation_factor': speed_result.speed_compensation_result.compensation_factor,
+                    'compensation_confidence': speed_result.speed_compensation_result.confidence,
+                    'original_anomalies': len(speed_result.original_anomalies),
+                    'compensated_anomalies': len(speed_result.compensated_anomalies),
+                    'anomaly_reduction_factor': speed_result.anomaly_reduction_factor,
+                    'speed_correlated_anomalies': len(speed_result.speed_correlated_anomalies),
+                    'detection_confidence': speed_result.confidence_score,
+                    'method_used': speed_result.method_used,
+                    'warnings': speed_result.speed_compensation_result.warnings
+                }
+
+                # Update anomaly information with speed-aware results if compensation was applied
+                if speed_result.speed_compensation_result.method_used != "none":
+                    if 'anomalies' not in analysis:
+                        analysis['anomalies'] = {}
+
+                    # Update with compensated anomaly count
+                    analysis['anomalies']['speed_compensated_total'] = len(speed_result.compensated_anomalies)
+                    analysis['anomalies']['speed_aware_method'] = speed_result.method_used
+                    analysis['anomalies']['compensation_improvement'] = f"{speed_result.anomaly_reduction_factor:.1%}"
+
+            except MemoryError as e:
+                logger.error(f"Memory error in speed-aware analysis for {unit}: {e}")
+                analysis['speed_aware_analysis'] = {
+                    'error': f"Memory limit exceeded - dataset too large for speed analysis",
+                    'compensation_applied': False,
+                    'performance_note': 'Consider further data reduction'
+                }
+            except Exception as e:
+                logger.warning(f"Speed-aware analysis failed for {unit}: {e}")
+                # Don't fail the entire analysis - just add a note
+                analysis['speed_aware_analysis'] = {
+                    'error': str(e),
+                    'compensation_applied': False
+                }
+
+            return analysis
+
+        except Exception as e:
+            logger.error(f"Error in unit analysis for {unit}: {e}")
+            return {
+                'unit': unit,
+                'status': 'error',
+                'error': str(e),
+                'analysis_timestamp': datetime.now().isoformat()
+            }
+
+    def _parse_unit_identifier(self, unit: str) -> Tuple[Optional[str], Optional[str]]:
+        """Parse unit identifier to extract plant and unit name
+
+        Args:
+            unit: Unit identifier (e.g., 'K-12-01', 'C-104', '07-MT01-K001')
+
+        Returns:
+            Tuple of (plant, unit_name) or (None, None) if parsing fails
+        """
+        try:
+            # PCFS units (K-XX-XX format)
+            if unit.startswith('K-'):
+                return ('PCFS', unit)
+
+            # ABF units (07-MTXX-XXXX format)
+            elif unit.startswith('07-MT'):
+                return ('ABF', unit)
+
+            # PCMSB units (C-XXXX format or XT-XXXX format)
+            elif unit.startswith('C-') or unit.startswith('XT-'):
+                return ('PCMSB', unit)
+
+            # Unknown format
+            else:
+                logger.warning(f"Unknown unit format: {unit}")
+                return (None, None)
+
+        except Exception as e:
+            logger.error(f"Error parsing unit identifier {unit}: {e}")
+            return (None, None)
+
 
 def main():
     """Main entry point"""
@@ -2201,6 +3829,34 @@ def main():
     # Interactive mode
     system = TurbopredictSystem()
     system.run()
+
+
+def main_loop_auto_refresh(max_age_hours=1.0, single_run=True):
+    """Main loop for auto refresh with age threshold and single run option.
+
+    Args:
+        max_age_hours (float): Maximum age in hours for data freshness
+        single_run (bool): If True, run once and exit; if False, run continuously
+
+    Returns:
+        bool: Success status
+    """
+    try:
+        system = TurbopredictSystem()
+
+        if single_run:
+            # Run auto-refresh scan once
+            system.run_real_data_scanner(auto_refresh=True)
+            print(f"Auto-refresh completed (max age: {max_age_hours}h)")
+            return True
+        else:
+            # Run continuous monitoring
+            run_continuous_monitoring(interval_hours=max_age_hours)
+            return True
+
+    except Exception as e:
+        print(f"main_loop_auto_refresh failed: {e}")
+        return False
 
 
 if __name__ == "__main__":

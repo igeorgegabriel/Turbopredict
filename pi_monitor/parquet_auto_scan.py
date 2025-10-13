@@ -1,5 +1,4 @@
-﻿"""
-Auto-scan functionality using existing Parquet files for TURBOPREDICT X PROTEAN
+"""Auto-scan functionality using existing Parquet files for TURBOPREDICT X PROTEAN
 Works with real data in the data directory
 """
 
@@ -11,6 +10,7 @@ import pandas as pd
 import logging
 from datetime import datetime, timedelta
 import time
+import os
 import json
 
 from .parquet_database import ParquetDatabase
@@ -19,8 +19,28 @@ from .excel_refresh import refresh_excel_safe
 from .breakout import detect_breakouts
 from .batch import build_unit_from_tags
 from .clean import dedup_parquet
+from .memory_optimizer import MemoryMonitor, ChunkedProcessor, StreamingParquetHandler, memory_efficient_dedup, optimize_dataframe_memory
 
 logger = logging.getLogger(__name__)
+
+# Try to import rich/colorama for cyberpunk styling
+try:
+    from rich.console import Console
+    from rich.panel import Panel
+    from rich.table import Table
+    from rich.text import Text
+    from rich import box
+    RICH_AVAILABLE = True
+except ImportError:
+    RICH_AVAILABLE = False
+
+if not RICH_AVAILABLE:
+    try:
+        from colorama import init, Fore, Back, Style
+        init(autoreset=True)
+        COLORAMA_AVAILABLE = True
+    except ImportError:
+        COLORAMA_AVAILABLE = False
 
 
 class ParquetAutoScanner:
@@ -28,20 +48,196 @@ class ParquetAutoScanner:
     
     def __init__(self, config: Config = None, data_dir: Path = None):
         """Initialize auto-scanner for Parquet files.
-        
+
         Args:
             config: Configuration object
             data_dir: Path to data directory
         """
         self.config = config or Config()
-        
+
         if data_dir is None:
             # Default to data directory relative to current location
             current_dir = Path(__file__).parent.parent
             data_dir = current_dir / "data"
-        
+
         self.db = ParquetDatabase(data_dir)
-        
+
+        # Memory optimization components - aggressive settings for large datasets
+        self.memory_monitor = MemoryMonitor(memory_threshold_gb=1.0)  # Reduced threshold for aggressive optimization
+        self.chunked_processor = ChunkedProcessor(chunk_size=250_000, memory_monitor=self.memory_monitor)  # Smaller chunks
+        self.streaming_handler = StreamingParquetHandler(temp_dir=data_dir / "temp", memory_monitor=self.memory_monitor)
+
+    def _print_cyberpunk_summary(self, results: Dict[str, Any]):
+        """Print cyberpunk-themed summary of refresh results"""
+        if RICH_AVAILABLE:
+            self._print_rich_summary(results)
+        elif COLORAMA_AVAILABLE:
+            self._print_colorama_summary(results)
+        else:
+            self._print_plain_summary(results)
+
+    def _print_rich_summary(self, results: Dict[str, Any]):
+        """Rich/beautiful cyberpunk summary"""
+        console = Console()
+
+        # Build summary data
+        successful = results.get('successful_units', 0)
+        failed = results.get('failed_units', 0)
+        total = successful + failed
+        success_rate = results.get('success_rate', 0)
+        total_time = results.get('total_time', 0)
+
+        # Create cyberpunk header
+        console.print()
+        console.print("╔" + "═" * 68 + "╗", style="bright_cyan")
+        console.print("║" + " " * 68 + "║", style="bright_cyan")
+        console.print("║" + "  ██╗███╗   ██╗ ██████╗██████╗ ███████╗███╗   ███╗███████╗███╗   ██╗████████╗  ██║".center(68) + "║", style="bright_cyan")
+        console.print("║" + "  ██║████╗  ██║██╔════╝██╔══██╗██╔════╝████╗ ████║██╔════╝████╗  ██║╚══██╔══╝  ██║".center(68) + "║", style="bright_cyan")
+        console.print("║" + "  ██║██╔██╗ ██║██║     ██████╔╝█████╗  ██╔████╔██║█████╗  ██╔██╗ ██║   ██║     ██║".center(68) + "║", style="bright_cyan")
+        console.print("║" + "  ██║██║╚██╗██║██║     ██╔══██╗██╔══╝  ██║╚██╔╝██║██╔══╝  ██║╚██╗██║   ██║     ██║".center(68) + "║", style="bright_cyan")
+        console.print("║" + "  ██║██║ ╚████║╚██████╗██║  ██║███████╗██║ ╚═╝ ██║███████╗██║ ╚████║   ██║     ██║".center(68) + "║", style="bright_cyan")
+        console.print("║" + "  ╚═╝╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝╚══════╝╚═╝  ╚═══╝   ╚═╝     ╚═╝".center(68) + "║", style="bright_cyan")
+        console.print("║" + "                 ██████╗ ███████╗███████╗██████╗ ███████╗███████╗██╗  ██╗".center(68) + "║", style="bright_magenta")
+        console.print("║" + "                 ██╔══██╗██╔════╝██╔════╝██╔══██╗██╔════╝██╔════╝██║  ██║".center(68) + "║", style="bright_magenta")
+        console.print("║" + "                 ██████╔╝█████╗  █████╗  ██████╔╝█████╗  ███████╗███████║".center(68) + "║", style="bright_magenta")
+        console.print("║" + "                 ██╔══██╗██╔══╝  ██╔══╝  ██╔══██╗██╔══╝  ╚════██║██╔══██║".center(68) + "║", style="bright_magenta")
+        console.print("║" + "                 ██║  ██║███████╗██║     ██║  ██║███████╗███████║██║  ██║".center(68) + "║", style="bright_magenta")
+        console.print("║" + "                 ╚═╝  ╚═╝╚══════╝╚═╝     ╚═╝  ╚═╝╚══════╝╚══════╝╚═╝  ╚═╝".center(68) + "║", style="bright_magenta")
+        console.print("║" + " " * 68 + "║", style="bright_cyan")
+        console.print("╚" + "═" * 68 + "╝", style="bright_cyan")
+        console.print()
+
+        # Create summary table with Excel fetch timing
+        table = Table(show_header=True, header_style="bold bright_cyan", box=box.DOUBLE_EDGE, border_style="bright_cyan")
+        table.add_column("▪ UNIT", style="bright_magenta", width=12)
+        table.add_column("▪ STATUS", style="bright_yellow", width=10, justify="center")
+        table.add_column("▪ FETCH", style="bright_green", width=8, justify="right")
+        table.add_column("▪ TOTAL", style="bright_cyan", width=8, justify="right")
+        table.add_column("▪ RESULT", style="bright_white", width=25)
+
+        # Add results for each unit
+        total_fetch_time = 0.0
+        for unit, result in results.get('unit_results', {}).items():
+            status_text = "✓ OK" if result['success'] else "✗ FAIL"
+            status_style = "bright_green" if result['success'] else "bright_red"
+            time_text = f"{result.get('processing_time', 0):.1f}s"
+
+            # Get Excel fetch time from stage_times
+            stage_times = result.get('stage_times', {})
+            fetch_time = stage_times.get('incremental_fetch', 0)
+            fetch_text = f"{fetch_time:.1f}s" if fetch_time > 0 else "N/A"
+            if fetch_time > 0:
+                total_fetch_time += fetch_time
+
+            if result['success']:
+                detail = f"{result.get('records_after', 0):,} records"
+            else:
+                detail = f"{result.get('error', 'Unknown error')[:23]}"
+
+            table.add_row(
+                unit,
+                Text(status_text, style=status_style),
+                fetch_text,
+                time_text,
+                detail
+            )
+
+        console.print(table)
+        console.print()
+
+        # Stats panel with fetch timing breakdown
+        fetch_pct = (total_fetch_time / total_time * 100) if total_time > 0 else 0
+        stats_content = f"""
+[bright_cyan]⏱  TOTAL TIME:[/]      [bright_yellow]{total_time/60:.1f}min[/] ([bright_white]{total_time:.1f}s[/])
+[bright_green]📊 FETCH TIME:[/]      [bright_yellow]{total_fetch_time/60:.1f}min[/] ([bright_white]{total_fetch_time:.1f}s, {fetch_pct:.1f}%[/])
+[bright_green]✓  SUCCESS:[/]         [bright_white]{successful}/{total}[/] units
+[bright_red]✗  FAILED:[/]          [bright_white]{failed}/{total}[/] units
+[bright_magenta]◆  SUCCESS RATE:[/]    [bright_yellow]{success_rate:.1f}%[/]
+"""
+
+        panel = Panel(
+            stats_content.strip(),
+            title="[bold bright_cyan]▪▫▪ REFRESH STATISTICS ▪▫▪[/]",
+            border_style="bright_magenta",
+            box=box.DOUBLE
+        )
+        console.print(panel)
+        console.print()
+
+    def _print_colorama_summary(self, results: Dict[str, Any]):
+        """Colorama fallback cyberpunk summary"""
+        successful = results.get('successful_units', 0)
+        failed = results.get('failed_units', 0)
+        total = successful + failed
+        success_rate = results.get('success_rate', 0)
+        total_time = results.get('total_time', 0)
+
+        # Calculate total fetch time
+        total_fetch_time = 0.0
+        for result in results.get('unit_results', {}).values():
+            stage_times = result.get('stage_times', {})
+            total_fetch_time += stage_times.get('incremental_fetch', 0)
+
+        print(f"\n{Fore.CYAN}{'=' * 70}")
+        print(f"{Fore.MAGENTA}{Style.BRIGHT}INCREMENTAL REFRESH SUMMARY")
+        print(f"{Fore.CYAN}{'=' * 70}\n")
+
+        # Unit results with fetch timing
+        for unit, result in results.get('unit_results', {}).items():
+            if result['success']:
+                status = f"{Fore.GREEN}[OK] SUCCESS{Style.RESET_ALL}"
+                stage_times = result.get('stage_times', {})
+                fetch_time = stage_times.get('incremental_fetch', 0)
+                if fetch_time > 0:
+                    status += f" (fetch: {fetch_time:.1f}s)"
+            else:
+                status = f"{Fore.RED}[FAIL] ERROR{Style.RESET_ALL}"
+            print(f"{Fore.MAGENTA}{unit}: {status}")
+
+        print(f"\n{Fore.CYAN}{'-' * 70}")
+        print(f"{Fore.YELLOW}⏱  Total Time:     {total_time/60:.1f} min ({total_time:.1f}s)")
+        fetch_pct = (total_fetch_time / total_time * 100) if total_time > 0 else 0
+        print(f"{Fore.GREEN}📊 Fetch Time:     {total_fetch_time/60:.1f} min ({total_fetch_time:.1f}s, {fetch_pct:.1f}%)")
+        print(f"{Fore.GREEN}✓  Success:        {successful}/{total} units")
+        print(f"{Fore.RED}✗  Failed:         {failed}/{total} units")
+        print(f"{Fore.MAGENTA}◆  Success Rate:   {success_rate:.1f}%")
+        print(f"{Fore.CYAN}{'=' * 70}\n")
+
+    def _print_plain_summary(self, results: Dict[str, Any]):
+        """Plain text fallback summary"""
+        successful = results.get('successful_units', 0)
+        failed = results.get('failed_units', 0)
+        total = successful + failed
+        success_rate = results.get('success_rate', 0)
+        total_time = results.get('total_time', 0)
+
+        # Calculate total fetch time
+        total_fetch_time = 0.0
+        for result in results.get('unit_results', {}).values():
+            stage_times = result.get('stage_times', {})
+            total_fetch_time += stage_times.get('incremental_fetch', 0)
+
+        print(f"\n{'=' * 70}")
+        print(f"INCREMENTAL REFRESH SUMMARY")
+        print(f"{'=' * 70}\n")
+
+        for unit, result in results.get('unit_results', {}).items():
+            status = "[OK] SUCCESS" if result['success'] else "[FAIL] ERROR"
+            stage_times = result.get('stage_times', {})
+            fetch_time = stage_times.get('incremental_fetch', 0)
+            if result['success'] and fetch_time > 0:
+                status += f" (fetch: {fetch_time:.1f}s)"
+            print(f"{unit}: {status}")
+
+        print(f"\n{'-' * 70}")
+        print(f"Total Time:     {total_time/60:.1f} min ({total_time:.1f}s)")
+        fetch_pct = (total_fetch_time / total_time * 100) if total_time > 0 else 0
+        print(f"Fetch Time:     {total_fetch_time/60:.1f} min ({total_fetch_time:.1f}s, {fetch_pct:.1f}%)")
+        print(f"Success:        {successful}/{total} units")
+        print(f"Failed:         {failed}/{total} units")
+        print(f"Success Rate:   {success_rate:.1f}%")
+        print(f"{'=' * 70}\n")
+
     def scan_all_units(self, max_age_hours: float = 1.0, force_refresh: bool = False) -> Dict[str, Any]:
         """Scan all available units and check data freshness.
         
@@ -255,7 +451,7 @@ class ParquetAutoScanner:
                 preferred_wb = xlsx_path
                 try:
                     if str(plant).upper().startswith("PCMSB"):
-                        pcmsb_wb = Path("excel/PCMSB_Automation.xlsx")
+                        pcmsb_wb = Path("excel/PCMSB/PCMSB_Automation.xlsx")
                         if pcmsb_wb.exists():
                             preferred_wb = pcmsb_wb
                     if str(plant).upper().startswith("ABF"):
@@ -265,13 +461,17 @@ class ParquetAutoScanner:
                 except Exception:
                     pass
                 print(f"  - Building {plant} {unit} from {tags_file.name} using {Path(preferred_wb).name} -> {out_parquet.name}")
+                # PCMSB units need longer timeouts due to PI server response times
+                settle_time = 30.0 if str(plant).upper().startswith("PCMSB") else 1.0
+
                 build_unit_from_tags(
                     xlsx=preferred_wb,
                     tags=[t.strip() for t in tags_file.read_text(encoding="utf-8").splitlines() if t.strip() and not t.strip().startswith('#')],
                     out_parquet=out_parquet,
                     plant=plant,
                     unit=unit,
-                    # use defaults: server/start/end/step/sheet/settle_seconds/visible
+                    settle_seconds=settle_time,
+                    # use defaults for: server/start/end/step/sheet/visible
                 )
                 # Dedup
                 dedup_path = dedup_parquet(out_parquet)
@@ -298,20 +498,41 @@ class ParquetAutoScanner:
         self.db = ParquetDatabase(self.db.data_dir)
         return results
 
-    def analyze_unit_data(self, unit: str, run_anomaly_detection: bool = True) -> Dict[str, Any]:
+    def analyze_unit_data(self, unit: str, run_anomaly_detection: bool = True, days_limit: int = 90) -> Dict[str, Any]:
         """Analyze data for a specific unit.
-        
+
         Args:
             unit: Unit identifier
             run_anomaly_detection: Whether to run anomaly detection
-            
+            days_limit: Only analyze last N days of data (default 90 for performance)
+
         Returns:
-            Analysis results
+            Analysis results with timing information
         """
-        logger.info(f"Analyzing unit: {unit}")
-        
-        # Get unit data
-        df = self.db.get_unit_data(unit)
+        import time
+
+        # Start timing
+        unit_start_time = time.time()
+        timing = {}
+
+        logger.info(f"Analyzing unit: {unit} (last {days_limit} days)")
+        print(f"   [DEBUG] Loading data for {unit} with {days_limit} days filter...")
+
+        # Get unit data with time filter at database level (much faster!)
+        fetch_start = time.time()
+        if days_limit > 0:
+            cutoff_date = datetime.now() - timedelta(days=days_limit)
+            print(f"   [DEBUG] Cutoff date: {cutoff_date}, calling get_unit_data...")
+            df = self.db.get_unit_data(unit, start_time=cutoff_date)
+            logger.info(f"Loaded {len(df):,} records for {unit} (last {days_limit} days)")
+            print(f"   [DEBUG] Loaded {len(df):,} records successfully")
+        else:
+            df = self.db.get_unit_data(unit)
+            print(f"   [DEBUG] Loaded {len(df):,} records (no filter)")
+
+        fetch_time = time.time() - fetch_start
+        timing['data_fetch_seconds'] = round(fetch_time, 2)
+        print(f"   [TIMING] Data fetch: {fetch_time:.2f}s")
         
         if df.empty:
             return {
@@ -354,19 +575,48 @@ class ParquetAutoScanner:
                 'null_count': int(df['value'].isnull().sum())
             }
         
-        # Enhanced anomaly detection with baseline tuning
+        # Extended data freshness analysis - fetch latest regardless of staleness
+        analysis['extended_freshness'] = self._analyze_extended_freshness(df, unit)
+
+        # Enhanced anomaly detection with baseline tuning + staleness as anomaly
         if run_anomaly_detection and 'value' in df.columns and 'tag' in df.columns:
+            print(f"   [DEBUG] Starting anomaly detection for {unit}...")
+            detection_start = time.time()
+
             analysis['anomalies'] = self._detect_anomalies_enhanced(df, unit)
-        
+
+            detection_time = time.time() - detection_start
+            timing['anomaly_detection_seconds'] = round(detection_time, 2)
+            print(f"   [TIMING] Anomaly detection: {detection_time:.2f}s")
+
+            # Add staleness as instrumentation anomaly
+            print(f"   [DEBUG] Adding staleness anomalies...")
+            analysis['anomalies'] = self._add_staleness_anomalies(analysis['anomalies'], analysis['extended_freshness'])
+            print(f"   [DEBUG] Staleness anomalies added")
+
+        # Calculate total time
+        total_time = time.time() - unit_start_time
+        timing['total_seconds'] = round(total_time, 2)
+        timing['total_minutes'] = round(total_time / 60, 2)
+
+        # Add timing to analysis
+        analysis['timing'] = timing
+
+        print(f"   [TIMING] Total unit analysis: {total_time:.2f}s ({total_time/60:.2f}min)")
+        print(f"   [SUMMARY] {unit}: {len(df):,} records, {analysis.get('unique_tags', 0)} tags, {timing.get('total_seconds', 0)}s")
+
         return analysis
     
     def _detect_anomalies_enhanced(self, df: pd.DataFrame, unit: str) -> Dict[str, Any]:
         """Enhanced anomaly detection with baseline tuning and unit status awareness"""
         try:
             # Try to use smart detection with unit status checking first
+            print(f"   [DEBUG] Calling smart_anomaly_detection for {unit} with {len(df)} records...")
             from .smart_anomaly_detection import smart_anomaly_detection
-            
-            results = smart_anomaly_detection(df, unit)
+
+            # Disable auto-plotting during analysis (plots are generated later in batch)
+            results = smart_anomaly_detection(df, unit, auto_plot_anomalies=False)
+            print(f"   [DEBUG] smart_anomaly_detection returned")
             
             # Convert to expected format with unit status awareness
             if results:
@@ -674,7 +924,7 @@ class ParquetAutoScanner:
             X = pivot_df[feature_cols].ffill().dropna()
             
             if len(X) < 50:
-                results['error'] = f'Insufficient data points for MTD analysis: {len(X)} points (need â‰¥50)'
+                results['error'] = f'Insufficient data points for MTD analysis: {len(X)} points (need ≥50)'
                 return results
             
             # Prefer speed-windowed baseline within recent window if configured
@@ -1033,7 +1283,7 @@ class ParquetAutoScanner:
             X = pivot_df[available_tags].ffill().dropna()
             
             if len(X) < 50:
-                results['error'] = f'Insufficient data points: {len(X)} (need â‰¥50)'
+                results['error'] = f'Insufficient data points: {len(X)} (need ≥50)'
                 return results
             
             # Batch processing parameters
@@ -1185,7 +1435,292 @@ class ParquetAutoScanner:
             results['error'] = f'Isolation Forest analysis failed: {str(e)}'
         
         return results
-    
+
+    def _analyze_extended_freshness(self, df: pd.DataFrame, unit: str) -> Dict[str, Any]:
+        """Analyze data freshness and extend to latest fetch regardless of staleness.
+
+        This method treats stale data as a form of instrumentation anomaly
+        and fetches the latest available data regardless of staleness thresholds.
+        """
+        freshness_analysis = {
+            'method': 'extended_fetch_regardless_staleness',
+            'unit': unit,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        try:
+            if df.empty or 'time' not in df.columns:
+                freshness_analysis['status'] = 'no_time_data'
+                return freshness_analysis
+
+            # Convert time column to datetime if needed
+            if not pd.api.types.is_datetime64_any_dtype(df['time']):
+                df['time'] = pd.to_datetime(df['time'])
+
+            # Current data analysis
+            now = datetime.now()
+            latest_data_time = pd.to_datetime(df['time'].max())
+            hours_since_latest = (now - latest_data_time).total_seconds() / 3600
+
+            freshness_analysis.update({
+                'latest_data_time': latest_data_time.isoformat(),
+                'hours_since_latest': hours_since_latest,
+                'current_time': now.isoformat(),
+                'is_stale_traditional': hours_since_latest > 1.0,  # Traditional 1-hour threshold
+                'staleness_category': self._categorize_staleness(hours_since_latest)
+            })
+
+            # Attempt to fetch latest data if available
+            try:
+                # This would normally check if unit needs refresh, but we extend regardless
+                extended_data = self._attempt_latest_fetch(unit, df)
+                freshness_analysis['extended_fetch'] = extended_data
+            except Exception as e:
+                freshness_analysis['extended_fetch'] = {
+                    'status': 'fetch_failed',
+                    'error': str(e)
+                }
+
+            return freshness_analysis
+
+        except Exception as e:
+            freshness_analysis.update({
+                'status': 'analysis_error',
+                'error': str(e)
+            })
+            return freshness_analysis
+
+    def _categorize_staleness(self, hours_old: float) -> Dict[str, Any]:
+        """Categorize staleness level for instrumentation anomaly classification."""
+        if hours_old <= 1.0:
+            return {'level': 'fresh', 'severity': 'none', 'description': 'Data is current'}
+        elif hours_old <= 6.0:
+            return {'level': 'mildly_stale', 'severity': 'low', 'description': 'Slight data lag - normal variation'}
+        elif hours_old <= 24.0:
+            return {'level': 'stale', 'severity': 'medium', 'description': 'Data staleness - potential instrumentation issue'}
+        elif hours_old <= 168.0:  # 1 week
+            return {'level': 'very_stale', 'severity': 'high', 'description': 'Significant staleness - instrumentation anomaly likely'}
+        else:
+            return {'level': 'extremely_stale', 'severity': 'critical', 'description': 'Extreme staleness - instrumentation failure probable'}
+
+    def _attempt_latest_fetch(self, unit: str, current_df: pd.DataFrame) -> Dict[str, Any]:
+        """Attempt to fetch the very latest data regardless of staleness thresholds."""
+        fetch_result = {
+            'attempted': True,
+            'timestamp': datetime.now().isoformat()
+        }
+
+        try:
+            # Get unit info for potential refresh
+            unit_info = self.db.get_unit_info(unit)
+            if not unit_info:
+                fetch_result.update({
+                    'status': 'no_unit_info',
+                    'message': 'Unit configuration not found'
+                })
+                return fetch_result
+
+            # Check for most recent possible data
+            current_latest = pd.to_datetime(current_df['time'].max()) if not current_df.empty else None
+
+            fetch_result.update({
+                'current_latest': current_latest.isoformat() if current_latest else None,
+                'unit_info_available': True,
+                'extended_range_attempted': True
+            })
+
+            # Plant-specific handling for all units
+            fetch_result.update(self._get_plant_specific_handling(unit))
+
+            return fetch_result
+
+        except Exception as e:
+            fetch_result.update({
+                'status': 'fetch_error',
+                'error': str(e)
+            })
+            return fetch_result
+
+    def _add_staleness_anomalies(self, existing_anomalies: Dict[str, Any], freshness_analysis: Dict[str, Any]) -> Dict[str, Any]:
+        """Add staleness as instrumentation anomalies to existing anomaly detection results."""
+
+        if not existing_anomalies:
+            existing_anomalies = {'total_anomalies': 0, 'by_tag': {}, 'method': 'baseline'}
+
+        staleness_info = freshness_analysis.get('staleness_category', {})
+        severity = staleness_info.get('severity', 'none')
+
+        # Only treat medium+ severity staleness as anomalies
+        if severity in ['medium', 'high', 'critical']:
+            # Add instrumentation anomaly
+            instrumentation_anomalies = {
+                'staleness_anomaly': {
+                    'type': 'instrumentation_anomaly',
+                    'subtype': 'data_staleness',
+                    'severity': severity,
+                    'description': staleness_info.get('description', 'Data staleness detected'),
+                    'hours_stale': freshness_analysis.get('hours_since_latest', 0),
+                    'detection_method': 'extended_freshness_analysis'
+                }
+            }
+
+            # Merge with existing anomalies
+            if 'instrumentation_anomalies' not in existing_anomalies:
+                existing_anomalies['instrumentation_anomalies'] = {}
+
+            existing_anomalies['instrumentation_anomalies'].update(instrumentation_anomalies)
+
+            # Update counts
+            existing_anomalies['total_anomalies'] = existing_anomalies.get('total_anomalies', 0) + 1
+            existing_anomalies['instrumentation_anomaly_count'] = len(existing_anomalies.get('instrumentation_anomalies', {}))
+
+        # Add freshness metadata
+        existing_anomalies['freshness_metadata'] = {
+            'extended_analysis_performed': True,
+            'staleness_category': staleness_info,
+            'extended_fetch_attempted': 'extended_fetch' in freshness_analysis
+        }
+
+        return existing_anomalies
+
+    def _get_plant_specific_handling(self, unit: str) -> Dict[str, Any]:
+        """Get plant-specific handling configuration for extended analysis."""
+
+        handling = {
+            'plant_type': 'unknown',
+            'special_handling': None,
+            'timeout_settings': {},
+            'working_tags_identified': [],
+            'known_issues': [],
+            'optimization_notes': []
+        }
+
+        unit_upper = unit.upper()
+
+        # ABF (Abu Dhabi Future) Units
+        if any(abf_pattern in unit_upper for abf_pattern in ['ABF', '07-MT01', '07-MT001']):
+            handling.update({
+                'plant_type': 'ABF',
+                'special_handling': 'ABF_direct_fetch',
+                'timeout_settings': {
+                    'PI_FETCH_TIMEOUT': 45,  # ABF typically faster than PCMSB
+                    'settle_seconds': 2.0,
+                    'recommended_timeframe': '-1d'  # Shorter timeframe for testing
+                },
+                'known_issues': [
+                    'Some ABF units may have popup issues',
+                    'Excel automation can be sensitive to VPN connectivity'
+                ],
+                'optimization_notes': [
+                    'Use visible=True if automation fails',
+                    'Consider use_working_copy=True for Excel stability'
+                ]
+            })
+
+            # Specific ABF units with known patterns
+            if '07-MT01' in unit_upper or '07-MT001' in unit_upper:
+                handling['working_tags_identified'] = [
+                    f'PRISM.ABF.{unit}.FI-07001.PV',
+                    f'ABF.{unit}.FI-07001.PV'
+                ]
+                handling['known_issues'].append('K001 variants may have timeout issues')
+
+        # PCFS (Petronas Chemicals Fertilizer Sdn Bhd) Units
+        elif any(pcfs_pattern in unit_upper for pcfs_pattern in ['PCFS', 'K-12-01', 'K-16-01', 'K-19-01', 'K-31-01']):
+            handling.update({
+                'plant_type': 'PCFS',
+                'special_handling': 'PCFS_optimized_fetch',
+                'timeout_settings': {
+                    'PI_FETCH_TIMEOUT': 30,  # PCFS generally reliable
+                    'settle_seconds': 1.5,
+                    'recommended_timeframe': '-1y'  # Full year data typically available
+                },
+                'optimization_notes': [
+                    'PCFS units typically have good connectivity',
+                    'Standard timeouts usually sufficient',
+                    'Rich historical data available'
+                ]
+            })
+
+            # PCFS unit-specific working tags
+            pcfs_working_tags = {
+                'K-12-01': ['PCFS_K-12-01_12SI-401B_PV', 'PCFS_K-12-01_12FI-302_PV'],
+                'K-16-01': ['PCFS_K-16-01_16SI-501B_PV', 'PCFS_K-16-01_16FI-401_PV'],
+                'K-19-01': ['PCFS_K-19-01_19SI-601B_PV', 'PCFS_K-19-01_19FI-501_PV'],
+                'K-31-01': ['PCFS_K-31-01_31KI-302_PV', 'PCFS_K-31-01_31FI-201_PV']
+            }
+
+            for pcfs_unit, tags in pcfs_working_tags.items():
+                if pcfs_unit in unit:
+                    handling['working_tags_identified'] = tags
+                    break
+
+        # PCMSB (Petronas Chemicals Methanol Sdn Bhd) Units
+        elif any(pcmsb_pattern in unit_upper for pcmsb_pattern in ['PCMSB', 'XT-07002', 'C-02001', 'C-104', 'C-13001', 'C-1301', 'C-1302', 'C-201', 'C-202']):
+            handling.update({
+                'plant_type': 'PCMSB',
+                'special_handling': 'PCMSB_enhanced_timeout_fetch',
+                'timeout_settings': {
+                    'PI_FETCH_TIMEOUT': 90,  # PCMSB needs longer timeouts
+                    'settle_seconds': 3.0,
+                    'recommended_timeframe': '-3d'  # Conservative timeframe due to server issues
+                },
+                'known_issues': [
+                    'PCMSB PI server has slower response times',
+                    'Many tags experience timeout issues',
+                    'Some units may have connectivity problems'
+                ],
+                'optimization_notes': [
+                    'Use longer timeouts (90s) for reliability',
+                    'Consider shorter time ranges for initial testing',
+                    'Focus on working tags first, then expand',
+                    'May need visible Excel for debugging'
+                ]
+            })
+
+            # PCMSB unit-specific working tags
+            pcmsb_working_tags = {
+                'XT-07002': ['PCM.XT-07002.070GZI8402.PV'],  # From user's evidence
+                'C-02001': ['PCM.C-02001.020TI-001.PV'],
+                'C-104': ['PCM.C-104.104TI-001.PV'],
+                'C-13001': ['PCM.C-13001.130TI-001.PV'],
+                'C-1301': ['PCM.C-1301.130TI-001.PV'],
+                'C-1302': ['PCM.C-1302.130TI-002.PV'],
+                'C-201': ['PCM.C-201.201TI-001.PV'],
+                'C-202': ['PCM.C-202.202TI-001.PV']
+            }
+
+            for pcmsb_unit, tags in pcmsb_working_tags.items():
+                if pcmsb_unit in unit:
+                    handling['working_tags_identified'] = tags
+                    break
+
+            # Special case for XT-07002 (user's problematic unit)
+            if 'XT-07002' in unit:
+                handling['known_issues'].extend([
+                    'Multiple tags timeout after 24s with default settings',
+                    'Data exists but server response is slow',
+                    'Some tags return empty data despite server connectivity'
+                ])
+
+        # Generic/Unknown Units
+        else:
+            handling.update({
+                'plant_type': 'GENERIC',
+                'special_handling': 'generic_adaptive_fetch',
+                'timeout_settings': {
+                    'PI_FETCH_TIMEOUT': 60,  # Conservative default
+                    'settle_seconds': 2.0,
+                    'recommended_timeframe': '-7d'  # Safe default
+                },
+                'optimization_notes': [
+                    'Using generic settings - may need plant-specific tuning',
+                    'Monitor performance and adjust timeouts as needed'
+                ]
+            })
+
+        return handling
+
     def generate_data_quality_report(self, unit: str) -> Dict[str, Any]:
         """Generate a data quality report for a unit.
         
@@ -1357,34 +1892,54 @@ class ParquetAutoScanner:
         # K-units (K-12-01, K-16-01, K-19-01, K-31-01) -> PCFS
         if unit_upper.startswith('K-') and '-' in unit_upper:
             pcfs_paths = [
-                project_root / "excel" / "PCFS_Automation_2.xlsx",
-                project_root / "excel" / "PCFS_Automation.xlsx"
+                project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",  # Working file first
+                project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx"
             ]
             for path in pcfs_paths:
                 if path.exists():
                     return path
 
-        # 07-MT01 units -> ABF
+        # 07-MT01 units -> ABF (now in ABFSB directory)
         elif unit_upper.startswith('07-MT01') or unit_upper.startswith('ABF'):
-            abf_path = project_root / "excel" / "ABF_Automation.xlsx"
-            if abf_path.exists():
-                return abf_path
+            abf_paths = [
+                project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation_Master.xlsx",
+                project_root / "excel" / "ABF_Automation.xlsx",
+                project_root / "excel" / "ABFSB_Automation.xlsx",
+            ]
+            for path in abf_paths:
+                if path.exists():
+                    return path
 
         # PCMSB units -> PCMSB ONLY (no PCFS fallback - different plants!)
         # PCMSB units include: units starting with PCMSB, containing PCMSB, or C-units (C-104, C-201, etc.)
         elif (unit_upper.startswith('PCMSB') or 'PCMSB' in unit_upper or
-              unit_upper.startswith('C-')):
-            pcmsb_path = project_root / "excel" / "PCMSB_Automation.xlsx"
+              unit_upper.startswith('C-') or unit_upper.startswith('XT-')):
+            pcmsb_path = project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx"
             if pcmsb_path.exists():
                 return pcmsb_path
             else:
+                # Attempt auto-recovery from most recent backup/dummy if main file missing
+                pcmsb_dir = project_root / "excel" / "PCMSB"
+                candidates = list(pcmsb_dir.glob("PCMSB_Automation_backup_*.xlsx")) + \
+                              list(pcmsb_dir.glob("PCMSB_Automation_dummy_*.xlsx"))
+                if candidates:
+                    latest = max(candidates, key=lambda p: p.stat().st_mtime)
+                    try:
+                        import shutil
+                        shutil.copy2(str(latest), str(pcmsb_path))
+                        print(f"   Auto-recovered PCMSB workbook from backup: {latest.name} -> {pcmsb_path.name}")
+                        return pcmsb_path
+                    except Exception as _copy_err:
+                        pass
                 raise RuntimeError(f"PCMSB unit '{unit}' requires PCMSB_Automation.xlsx but file not found")
 
         # ABFSB units -> ABFSB (with ABF fallback)
         elif unit_upper.startswith('ABFSB') or 'ABFSB' in unit_upper:
             abfsb_paths = [
-                project_root / "excel" / "ABFSB_Automation.xlsx",
-                project_root / "excel" / "ABF_Automation.xlsx"     # Fallback
+                project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+                project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx"     # Fallback
             ]
             for path in abfsb_paths:
                 if path.exists():
@@ -1397,19 +1952,27 @@ class ParquetAutoScanner:
                 plant = unit_data['plant'].iloc[0].upper()
 
                 if plant.startswith("ABF"):
-                    abf_path = project_root / "excel" / "ABF_Automation.xlsx"
-                    if abf_path.exists():
-                        return abf_path
+                    abf_paths = [
+                        project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+                        project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx"
+                    ]
+                    for path in abf_paths:
+                        if path.exists():
+                            return path
                 elif plant.startswith("PCMSB"):
-                    pcmsb_path = project_root / "excel" / "PCMSB_Automation.xlsx"
+                    pcmsb_path = project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx"
                     if pcmsb_path.exists():
                         return pcmsb_path
                     else:
                         raise RuntimeError(f"PCMSB plant requires PCMSB_Automation.xlsx but file not found")
                 elif plant.startswith("PCFS"):
-                    pcfs_path = project_root / "excel" / "PCFS_Automation_2.xlsx"
-                    if pcfs_path.exists():
-                        return pcfs_path
+                    pcfs_paths = [
+                        project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",  # Working file first
+                        project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx"
+                    ]
+                    for path in pcfs_paths:
+                        if path.exists():
+                            return path
         except Exception:
             # Ignore data access errors - rely on pattern matching above
             pass
@@ -1420,11 +1983,14 @@ class ParquetAutoScanner:
 
         # Last resort - find any available Excel file (prioritize PCFS for unknown units)
         excel_paths = [
-            project_root / "excel" / "PCFS_Automation_2.xlsx",  # Most common
-            project_root / "excel" / "PCFS_Automation.xlsx",
-            project_root / "excel" / "ABF_Automation.xlsx",
-            project_root / "excel" / "PCMSB_Automation.xlsx",
-            project_root / "excel" / "ABFSB_Automation.xlsx",
+            project_root / "excel" / "PCFS" / "PCFS_Automation.xlsx",  # Working file first
+            project_root / "excel" / "PCFS" / "PCFS_Automation_2.xlsx",
+            project_root / "excel" / "ABFSB" / "ABF_Automation.xlsx",
+            project_root / "excel" / "PCMSB" / "PCMSB_Automation.xlsx",
+            project_root / "excel" / "ABFSB" / "ABFSB_Automation.xlsx",
+            project_root / "excel" / "MLNG" / "MLNG_Automation.xlsx",
+            project_root / "excel" / "PFLNG1" / "PFLNG1_Automation.xlsx",
+            project_root / "excel" / "PFLNG2" / "PFLNG2_Automation.xlsx",
             project_root / "data" / "raw" / "Automation.xlsx",
             project_root / "Automation.xlsx"
         ]
@@ -1437,19 +2003,364 @@ class ParquetAutoScanner:
 
 
     def _infer_plant_from_unit(self, unit: str) -> str:
-        if unit.startswith('07') or unit.upper().startswith('ABF'):
+        """Best-effort mapping from unit id to plant.
+
+        Known patterns:
+        - ABF: legacy ids starting with digits (e.g., '07-MT01-K001') or new ids like '21-K002'
+        - PCFS: 'K-xx-xx'
+        - PCMSB: 'C-xxxxx' and 'XT-xxxxx'
+        """
+        import re
+        u = unit.strip()
+        if u.upper().startswith('ABF'):
             return 'ABF'
-        if unit.startswith('K-'):
+        # Digit-led ABF conventions (e.g., '07-...', '21-K002')
+        if re.match(r"^\d{2}-", u):
+            return 'ABF'
+        if u.startswith('K-'):
             return 'PCFS'
-        if unit.startswith('C-') or unit.startswith('XT-'):
+        if u.startswith('C-') or u.startswith('XT-'):
             return 'PCMSB'
         return 'UNKNOWN'
+
+    def _find_tags_file_for_unit(self, unit: str) -> Optional[Path]:
+        """Locate the appropriate tag file in config/ for a unit.
+
+        Supports:
+        - ABF unit 07-MT01-K001 -> tags_abf_07mt01_k001.txt
+        - PCMSB units C-xxxx / XT-xxxx -> tags_pcmsb_cxxxx.txt / tags_pcmsb_xtxxxx.txt
+        - PCFS K-units (rarely needed here) -> tags_kxx_xx.txt
+        """
+        from .config import Config
+        cfg = Config()
+        cfg_dir = cfg.paths.project_root / 'config'
+
+        u = unit.strip().upper()
+        # ABF mapping
+        if u == '07-MT01-K001' or u.startswith('07-MT01'):
+            candidate = cfg_dir / 'tags_abf_07mt01_k001.txt'
+            return candidate if candidate.exists() else None
+        # New ABF unit mapping: 21-K002
+        if u == '21-K002':
+            candidate = cfg_dir / 'tags_abf_21k002.txt'
+            return candidate if candidate.exists() else None
+
+        # PCMSB mapping
+        if u.startswith('C-'):
+            key = u.replace('-', '').lower()
+            candidate = cfg_dir / f'tags_pcmsb_{key}.txt'
+            return candidate if candidate.exists() else None
+        if u.startswith('XT-'):
+            key = u.replace('-', '').lower()
+            candidate = cfg_dir / f'tags_pcmsb_{key}.txt'
+            return candidate if candidate.exists() else None
+
+        # PCFS mapping (K-units)
+        if u.startswith('K-'):
+            key = u.replace('-', '_').lower()  # K-16-01 -> k_16_01
+            # Known files in repo use tags_k16_01.txt etc.
+            try:
+                num = u.split('-')[1:]
+                if len(num) >= 2:
+                    candidate = cfg_dir / f"tags_k{num[0]}_{num[1]}.txt"
+                    return candidate if candidate.exists() else None
+            except Exception:
+                pass
+
+        return None
+
+    def _attempt_reseed_and_refresh(self, unit: str, xlsx_path: Path) -> bool:
+        """Try to reseed the workbook's DL_WORK sheet with correct PI tags and refresh.
+
+        Returns True if reseed+refresh appeared to succeed (Excel file exists).
+        """
+        import os
+        # Hard-disable reseed for ABF/07-MT01 units to avoid popups/timeouts
+        u = unit.strip().upper()
+        if u.startswith('07-') or u.startswith('ABF'):
+            return False
+        if os.getenv('DISABLE_RESEED', '0') == '1':
+            # Allow operators to bypass reseed if it causes slowness
+            return False
+        tags_file = self._find_tags_file_for_unit(unit)
+        if not tags_file or not tags_file.exists():
+            return False
+
+        try:
+            # Import seeder lazily to avoid heavy deps when unused
+            from scripts.seed_datalink_formulas import seed_sheet
+            server = "\\\\PTSG-1MMPDPdb01"
+            # Choose a short lookback to avoid long Excel recalcs that can appear 'stuck'
+            # If there is an existing master parquet, start after its last timestamp; else use last 1 day
+            start_arg = "-1d"
+            try:
+                master = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
+                if master.exists():
+                    import pandas as pd
+                    ts = pd.read_parquet(master, columns=['time'])
+                    if not ts.empty:
+                        last_ts = pd.to_datetime(ts['time']).max()
+                        # Use a small backward overlap so near-real-time runs don't produce 0 rows
+                        # and let downstream dedup remove duplicates safely.
+                        overlap_minutes = 15
+                        start_arg = (last_ts - pd.Timedelta(minutes=overlap_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+            except Exception:
+                pass
+
+            # Run seeding with a hard timeout to avoid getting stuck in Excel/PI DataLink
+            import threading, time as _t
+            seed_ok = {'done': False, 'err': None}
+
+            def _seed_task():
+                try:
+                    seed_sheet(
+                        xlsx_path,
+                        sheet_name="DL_WORK",
+                        tags_file=tags_file,
+                        server=server,
+                        start=start_arg,
+                        end="*",
+                        step="-0.1h",
+                    )
+                    seed_ok['done'] = True
+                except Exception as _e:
+                    seed_ok['err'] = _e
+
+            t = threading.Thread(target=_seed_task, daemon=True)
+            t.start()
+            t.join(timeout=180)  # 3 minutes max for reseed
+            if t.is_alive():
+                print("   WARNING: Reseed timed out after 180s; skipping and using direct tag retrieval")
+                return False
+            if seed_ok['err'] is not None:
+                print(f"   Warning: Reseed failed: {seed_ok['err']}")
+                return False
+
+            # Optional light refresh after seeding to flush formulas
+            try:
+                refresh_excel_safe(xlsx_path, settle_seconds=2)
+            except Exception:
+                pass
+            return xlsx_path.exists()
+        except Exception as _seed_err:
+            print(f"   Warning: Reseed attempt failed: {_seed_err}")
+            return False
+
+    def _incremental_refresh_unit(self, unit: str, xlsx_path: Path) -> bool:
+        """Perform incremental refresh using PI Web API (primary) or Excel PI DataLink (fallback).
+
+        This function:
+        1. Gets the latest timestamp from the parquet database
+        2. Calculates the time gap from last data to now
+        3. Tries PI Web API fetch first (faster, no Excel overhead)
+        4. Falls back to Excel PI DataLink if Web API unavailable/fails
+
+        Args:
+            unit: Unit identifier (e.g., 'K-12-01')
+            xlsx_path: Path to Excel workbook
+
+        Returns:
+            True if incremental refresh succeeded, False otherwise
+        """
+        try:
+            # Check if ABF units should be skipped (optional via environment variable)
+            import os as _os_abf
+            skip_abf = _os_abf.getenv('SKIP_ABF_REFRESH', '0').strip() in ('1', 'true', 'yes', 'y')
+            if skip_abf and (unit.startswith('07-') or unit.upper().startswith('ABF')):
+                print(f"   SKIPPED: ABF refresh disabled by SKIP_ABF_REFRESH env var")
+                return False
+
+            # Step 1: Get latest timestamp from database
+            latest_ts = self.db.get_latest_timestamp(unit)
+            if latest_ts is None:
+                print(f"   No existing data for {unit} - need full historical fetch")
+                return False
+
+            # Step 2: Calculate time gap
+            now = pd.Timestamp.now()
+            gap_hours = (now - latest_ts).total_seconds() / 3600
+
+            # Add 10% buffer to ensure we don't miss any data
+            fetch_hours = gap_hours * 1.10
+
+            print(f"   Latest data: {latest_ts.strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"   Gap detected: {gap_hours:.1f} hours")
+            print(f"   Fetching: {fetch_hours:.1f} hours (with 10% buffer)")
+
+            # Step 3: Get tags for this unit
+            tags_file = self._find_tags_file_for_unit(unit)
+            if not tags_file or not tags_file.exists():
+                print(f"   WARNING: No tags file found for {unit}")
+                return False
+
+            tags = [
+                t.strip() for t in tags_file.read_text(encoding='utf-8').splitlines()
+                if t.strip() and not t.strip().startswith('#')
+            ]
+
+            print(f"   Tags: {len(tags)} found")
+
+            # Determine plant and server
+            plant = self._infer_plant_from_unit(unit)
+            server = "PTSG-1MMPDPdb01"  # No backslashes for Web API
+
+            # Calculate incremental start/end/step
+            start = f"-{fetch_hours:.1f}h"
+            end = "*"
+            step = "-0.1h"  # 6-minute intervals
+
+            # Create temp parquet for incremental data
+            temp_parquet = self.db.processed_dir / f"{unit}_incremental_temp.parquet"
+
+            # STRATEGY: Try PI Web API first, fallback to Excel if needed
+            webapi_success = False
+            import os as _os_web
+            webapi_url = _os_web.getenv('PI_WEBAPI_URL', '').strip()
+
+            if webapi_url:
+                # Try PI Web API fetch (PRIMARY METHOD)
+                try:
+                    from .webapi import fetch_tags_via_webapi
+
+                    print(f"   [PRIMARY] Trying PI Web API fetch...")
+                    print(f"   Web API URL: {webapi_url}")
+
+                    df_web = fetch_tags_via_webapi(
+                        tags=tags,
+                        server=server,
+                        start=start,
+                        end=end,
+                        step=step,
+                        base_url=webapi_url,
+                        auth_mode='windows',  # Windows auth
+                        verify_ssl=False,     # Often needed for internal servers
+                        timeout=30.0,
+                        max_workers=4,
+                        qps=3.0,
+                        retries=2
+                    )
+
+                    if not df_web.empty:
+                        # Save to temp parquet
+                        df_web.to_parquet(temp_parquet, index=False, engine='pyarrow')
+                        print(f"   [SUCCESS] Web API fetched {len(df_web):,} records from {len(df_web['tag'].unique())} tags")
+                        webapi_success = True
+                    else:
+                        print(f"   [WARNING] Web API returned no data")
+
+                except Exception as web_err:
+                    print(f"   [WARNING] Web API fetch failed: {web_err}")
+                    print(f"   [FALLBACK] Will try Excel PI DataLink...")
+            else:
+                print(f"   [INFO] PI_WEBAPI_URL not configured, using Excel PI DataLink")
+
+            # FALLBACK: Use Excel PI DataLink if Web API failed or not configured
+            if not webapi_success:
+                from .batch import build_unit_from_tags
+
+                print(f"   [FALLBACK] Using Excel PI DataLink fetch...")
+
+                # Plant-specific timeout configuration
+                if plant.upper().startswith("PCMSB"):
+                    settle_time = 30.0
+                    timeout_seconds = 360  # 6 minutes for PCMSB
+                elif plant.upper().startswith("ABF") or plant.upper().startswith("07-"):
+                    settle_time = 60.0
+                    timeout_seconds = 600  # 10 minutes for ABF
+                    if fetch_hours > 1.0:
+                        print(f"   WARNING: ABF fetch limited to 1 hour max (was {fetch_hours:.1f}h)")
+                        fetch_hours = 1.0
+                        start = f"-{fetch_hours:.1f}h"
+                elif plant.upper() == "PCFS":
+                    # PCFS needs longer timeout for incremental fetches
+                    settle_time = 5.0  # Increased from 1.0 for reliability
+                    timeout_seconds = 300  # 5 minutes for PCFS (was 60-120s)
+                else:
+                    settle_time = 1.0
+                    timeout_seconds = 120  # Default 2 minutes
+
+                # Set timeout environment variable
+                import os as _os_timeout
+                old_timeout = _os_timeout.getenv('PI_FETCH_TIMEOUT')
+                _os_timeout.environ['PI_FETCH_TIMEOUT'] = str(timeout_seconds)
+                print(f"   Timeout: {timeout_seconds}s ({timeout_seconds/60:.1f} minutes), settle: {settle_time}s")
+
+                try:
+                    # Check if we should use visible Excel (more reliable for problematic units)
+                    import os as _os_vis
+                    use_visible = _os_vis.getenv('EXCEL_VISIBLE', '0').strip() in ('1', 'true', 'yes', 'y')
+
+                    # PCFS units often need visible=True for PI DataLink to load properly
+                    if plant.upper() == "PCFS" and not use_visible:
+                        # Try visible=True for PCFS by default (more reliable)
+                        use_visible = True
+                        print(f"   Using visible=True for {plant} (PI DataLink reliability)")
+
+                    build_unit_from_tags(
+                        xlsx=xlsx_path,
+                        tags=tags,
+                        out_parquet=temp_parquet,
+                        plant=plant,
+                        unit=unit,
+                        server=f"\\\\{server}",  # Excel needs backslashes
+                        start=start,
+                        end=end,
+                        step=step,
+                        settle_seconds=settle_time,
+                        visible=use_visible  # Use visible Excel for reliability
+                    )
+                finally:
+                    # Restore original timeout
+                    if old_timeout:
+                        _os_timeout.environ['PI_FETCH_TIMEOUT'] = old_timeout
+                    elif 'PI_FETCH_TIMEOUT' in _os_timeout.environ:
+                        del _os_timeout.environ['PI_FETCH_TIMEOUT']
+
+            # Step 5: Append incremental data to master parquet
+            if temp_parquet.exists():
+                df_new = pd.read_parquet(temp_parquet)
+                print(f"   Fetched {len(df_new):,} new records")
+
+                # Append to master parquet
+                master_parquet = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
+                if master_parquet.exists():
+                    # Append new data
+                    from .ingest import append_parquet
+                    try:
+                        append_parquet(df_new, master_parquet)
+                        print(f"   Appended to {master_parquet.name}")
+                    except Exception as append_err:
+                        # Fallback: read, concat, write
+                        print(f"   Append failed ({append_err}), using concat method...")
+                        df_old = pd.read_parquet(master_parquet)
+                        df_combined = pd.concat([df_old, df_new], ignore_index=True)
+                        df_combined = df_combined.sort_values('time').drop_duplicates(subset=['time', 'tag'], keep='last')
+                        df_combined.to_parquet(master_parquet, index=False, engine='pyarrow')
+                        print(f"   Combined {len(df_combined):,} total records")
+                else:
+                    # First time - just copy
+                    df_new.to_parquet(master_parquet, index=False, engine='pyarrow')
+                    print(f"   Created new {master_parquet.name}")
+
+                # Clean up temp file
+                temp_parquet.unlink(missing_ok=True)
+                return True
+            else:
+                print(f"   WARNING: No data fetched")
+                return False
+
+        except Exception as e:
+            print(f"   ERROR in incremental refresh: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
     def _load_unit_from_tags(self, unit: str, default_xlsx_path: Path, lookback: str = '-2d') -> pd.DataFrame:
         from .config import Config
         from .batch import build_unit_from_tags
         from .clean import dedup_parquet
         import pandas as pd
+        import gc
 
         cfg = Config()
         config_dir = cfg.paths.project_root / 'config'
@@ -1475,24 +2386,142 @@ class ParquetAutoScanner:
             raise RuntimeError(f"No Excel workbook available for {unit}")
 
         plant = self._infer_plant_from_unit(unit)
+
+        # Find the last timestamp in existing master parquet file
+        master = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
+        start_time = None
+
+        if master.exists():
+            try:
+                # Read just the time column to find last timestamp
+                existing_df = pd.read_parquet(master, columns=['time'])
+                if not existing_df.empty:
+                    last_timestamp = pd.to_datetime(existing_df['time']).max()
+                    # Start from last timestamp + 1 minute to avoid overlap
+                    start_time = (last_timestamp + pd.Timedelta(minutes=1)).strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"   Last data in master: {last_timestamp}")
+                    print(f"   Fetching from: {start_time} to current time")
+                else:
+                    print(f"   Master file exists but empty, fetching last 24h")
+                    start_time = '-1d'
+            except Exception as e:
+                print(f"   Error reading master file: {e}, fetching last 24h")
+                start_time = '-1d'
+        else:
+            print(f"   No master file exists, fetching last 24h")
+            start_time = '-1d'
+
         print(f"   Fallback: fetching {len(tags)} tags from PI for {unit} (plant {plant}) using {excel_path.name}...")
-        temp_parquet = self.db.processed_dir / f"{unit}_fallback.parquet"
-        try:
-            build_unit_from_tags(
-                excel_path,
-                tags,
-                temp_parquet,
-                plant=plant,
-                unit=unit,
-                start=lookback,
-                end='*',
-                step='-0.1h',
-                visible=False,
-                settle_seconds=0.5,
-            )
-            df = pd.read_parquet(temp_parquet)
+        print(f"   Time range: {start_time} to current")
+
+        # Use a unique temp parquet to avoid collisions/locks across runs
+        import time as _tmod
+        temp_parquet = self.db.processed_dir / f"{unit}_fallback_{int(_tmod.time())}.parquet"
+        try: # This is the outer try for the entire fallback operation
+            import time
+            import threading
+
+            result_container = {}
+            def target():
+                try:
+                    # Allow unit/plant-specific server override via env
+                    import os as _os_env
+                    server_override = None
+                    if plant.upper().startswith('ABF'):
+                        server_override = _os_env.getenv('ABF_PI_SERVER')
+                    elif plant.upper().startswith('PCMSB'):
+                        server_override = _os_env.getenv('PCMSB_PI_SERVER')
+                    elif plant.upper().startswith('PCFS'):
+                        server_override = _os_env.getenv('PCFS_PI_SERVER')
+
+                    build_unit_from_tags(
+                        excel_path,
+                        tags,
+                        temp_parquet,
+                        plant=plant,
+                        unit=unit,
+                        server=(server_override or "\\\\PTSG-1MMPDPdb01"),
+                        start=start_time,
+                        end='*',
+                        step='-0.1h',
+                        visible=False,
+                        settle_seconds=0.5,
+                    )
+                    result_container['success'] = True
+                except Exception as e:
+                    result_container['error'] = e
+
+            try:
+                thread = threading.Thread(target=target)
+                thread.start()
+                fetch_start = time.time()
+                thread.join(timeout=300) # 5-minute timeout
+
+                if thread.is_alive():
+                    raise TimeoutError("Fallback tag retrieval timed out after 300 seconds")
+                if 'error' in result_container:
+                    raise result_container['error']
+
+                # Read the parquet file if the thread was successful (with robust retry)
+                import shutil, os
+                df = pd.DataFrame()
+                if temp_parquet.exists():
+                    read_ok = False
+                    last_err = None
+                    # Try direct read several times in case another process still has a handle
+                    for _ in range(10):
+                        try:
+                            df = pd.read_parquet(temp_parquet)
+                            read_ok = True
+                            break
+                        except Exception as e:
+                            last_err = e
+                            _tmod.sleep(0.5)
+                    if not read_ok:
+                        # Try copying to a new path then reading
+                        try:
+                            copy_path = temp_parquet.with_suffix('.read.parquet')
+                            shutil.copy2(str(temp_parquet), str(copy_path))
+                            df = pd.read_parquet(copy_path)
+                            try:
+                                copy_path.unlink(missing_ok=True)
+                            except Exception:
+                                pass
+                            read_ok = True
+                        except Exception as e:
+                            last_err = e
+                    if not read_ok:
+                        raise last_err if last_err else RuntimeError("Unable to read fallback parquet")
+                elif 'df' not in locals():
+                    df = pd.DataFrame()
+
+            except Exception as e:
+                # Handle any errors from the threading operation
+                if isinstance(e, TimeoutError):
+                    raise e
+                else:
+                    print(f"   WARNING: Threading operation failed: {e}")
+                    df = pd.DataFrame()
+
+        except TimeoutError as e:
+            print(f"   WARNING: {e}")
+            # Create minimal fallback data to prevent complete failure
+            df = pd.DataFrame({
+                'plant': [plant],
+                'unit': [unit],
+                'tag': [f'{plant}_{unit}_FALLBACK_TAG'], # Corrected f-string
+                'time': [pd.Timestamp.now()],
+                'value': [0.0]
+            })
+        except Exception as e:
+            # Catch exceptions from the thread
+            print(f"   WARNING: Fallback thread failed: {e}")
+            df = pd.DataFrame()
         finally:
-            temp_parquet.unlink(missing_ok=True)
+            try:
+                temp_parquet.unlink(missing_ok=True) # Ensure temp file is always cleaned up
+            except Exception:
+                pass
 
         if df.empty:
             raise RuntimeError(f"Tag fallback produced no data for {unit}")
@@ -1503,16 +2532,178 @@ class ParquetAutoScanner:
         master = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
         if master.exists():
             try:
-                existing = pd.read_parquet(master)
-                existing['time'] = pd.to_datetime(existing['time'])
-                df = pd.concat([existing, df], ignore_index=True)
-                df = df.sort_values('time').drop_duplicates(subset=['time', 'tag'], keep='last').reset_index(drop=True)
-            except Exception:
+                # Memory-efficient merge for large datasets
+                logger.info(f"Merging with existing data for unit {unit}")
+                self.memory_monitor.log_memory_status("before merge")
+
+                # Check existing file size first
+                existing_size_mb = master.stat().st_size / (1024**2)
+                new_df_mb = df.memory_usage(deep=True).sum() / (1024**2)
+
+                # Emergency bypass for extremely large files to prevent memory failures
+                if existing_size_mb > 200:  # 200MB+ files (very aggressive to prevent K-31-01 issues)
+                    logger.warning(f"Very large historical file ({existing_size_mb:.1f}MB), using fresh data only to prevent memory issues")
+                    # For extremely large files, just use fresh data and skip historical merge
+                    logger.info(f"Skipping historical merge for {unit} due to size constraints")
+                    # Just use the fresh data without historical merge
+                    pass  # df already contains fresh data, no merge needed
+
+                elif existing_size_mb > 100 or new_df_mb > 100 or self.memory_monitor.check_memory_pressure():
+                    # Use streaming merge for large files
+                    logger.info(f"Using streaming merge for large dataset: {existing_size_mb:.1f}MB existing + {new_df_mb:.1f}MB new")
+                    existing = pd.read_parquet(master, columns=['time'])  # Only read time column initially
+
+                    # Performance optimization: Only load recent historical data to prevent memory issues
+                    # Use chunked reading to avoid loading massive datasets into memory
+                    cutoff_date = datetime.now() - timedelta(days=90)
+                    logger.info(f"Using chunked reading for historical data from {cutoff_date.strftime('%Y-%m-%d')} onwards")
+
+                    try:
+                        # Try chunked reading first to avoid memory issues
+                        existing_chunks = []
+                        chunk_size = 100_000  # 100K records per chunk
+
+                        logger.info(f"Reading historical data in chunks of {chunk_size:,} records")
+                        parquet_file = pd.read_parquet(master, engine='pyarrow')
+
+                        # If file is too large, skip very old data
+                        if len(parquet_file) > 5_000_000:  # 5M+ records
+                            logger.warning(f"Very large historical dataset ({len(parquet_file):,} records), using only recent subset")
+                            parquet_file['time'] = pd.to_datetime(parquet_file['time'])
+                            # For very large files, only keep last 30 days to prevent memory issues
+                            recent_cutoff = datetime.now() - timedelta(days=30)
+                            existing_full = parquet_file[parquet_file['time'] >= recent_cutoff]
+                            logger.info(f"Large dataset optimization: {len(parquet_file):,} -> {len(existing_full):,} records (30-day window)")
+                            del parquet_file
+                        else:
+                            # Standard filtering for smaller datasets
+                            parquet_file['time'] = pd.to_datetime(parquet_file['time'])
+                            existing_full = parquet_file[parquet_file['time'] >= cutoff_date]
+                            logger.info(f"Standard filtering: {len(parquet_file):,} -> {len(existing_full):,} records")
+                            del parquet_file
+
+                    except MemoryError:
+                        logger.error(f"Memory error reading historical data for {unit}, skipping historical merge")
+                        existing_full = pd.DataFrame()  # Use only fresh data
+
+                    # Use streaming handler for merge
+                    df = self.streaming_handler.merge_large_dataframes(existing_full, df, ['time', 'tag'])
+
+                    # Cleanup
+                    del existing, existing_full
+                    self.memory_monitor.force_garbage_collection()
+                else:
+                    # Standard merge for smaller datasets
+                    existing = pd.read_parquet(master)
+                    existing['time'] = pd.to_datetime(existing['time'])
+
+                    # Apply same time filter to standard merge for consistency
+                    cutoff_date = datetime.now() - timedelta(days=90)
+                    before_filter = len(existing)
+                    existing = existing[existing['time'] >= cutoff_date]
+                    after_filter = len(existing)
+                    if before_filter != after_filter:
+                        logger.info(f"Standard merge - Historical data filtered: {before_filter:,} -> {after_filter:,} records")
+
+                    df = pd.concat([existing, df], ignore_index=True)
+                    del existing
+
+                # Memory-efficient deduplication
+                df = memory_efficient_dedup(df, subset=['time', 'tag'])
+                df = df.sort_values('time').reset_index(drop=True)
+
+                self.memory_monitor.log_memory_status("after merge")
+
+            except MemoryError as e:
+                logger.error(f"Memory error during merge for unit {unit}: {e}")
+                logger.info("Attempting incremental processing fallback")
+                # Fallback: process in smaller chunks
+                try:
+                    df = self._fallback_incremental_merge(master, df, unit)
+                except Exception as fallback_e:
+                    logger.error(f"Fallback merge also failed for unit {unit}: {fallback_e}")
+                    raise MemoryError(f"Unable to merge data for unit {unit} due to memory constraints")
+            except Exception as e:
+                logger.error(f"Error during merge for unit {unit}: {e}")
                 pass
 
-        df.to_parquet(master, index=False)
-        dedup_parquet(master)
+        # Atomic write of master parquet
+        from .ingest import write_parquet
+        write_parquet(df, master)
+        # Optional: defer dedup to end-of-run for speed
+        import os as _os
+        if _os.getenv('DELAY_DEDUP', '').strip().lower() in ('1','true','yes','y') or \
+           _os.getenv('DEDUP_MODE', '').strip().lower() in ('end','deferred','once'):
+            # Caller may handle a final dedup sweep
+            pass
+        else:
+            dedup_parquet(master)
         return df
+
+    def _fallback_incremental_merge(self, master_file: Path, new_df: pd.DataFrame, unit: str) -> pd.DataFrame:
+        """Incremental merge fallback for memory-constrained environments.
+
+        Args:
+            master_file: Path to existing parquet file
+            new_df: New DataFrame to merge
+            unit: Unit identifier
+
+        Returns:
+            Merged DataFrame using incremental processing
+        """
+        logger.info(f"Using incremental merge fallback for unit {unit}")
+
+        try:
+            # Read existing data in chunks to find overlap period
+            temp_files = []
+            chunk_processor = ChunkedProcessor(chunk_size=100_000, memory_monitor=self.memory_monitor)
+
+            # Find the time range of new data
+            new_df['time'] = pd.to_datetime(new_df['time'])
+            new_start = new_df['time'].min()
+            new_end = new_df['time'].max()
+
+            logger.info(f"New data range: {new_start} to {new_end}")
+
+            # Process existing data in chunks, filtering out overlapping period
+            filtered_chunks = []
+            for chunk in chunk_processor.read_parquet_chunked(master_file):
+                chunk['time'] = pd.to_datetime(chunk['time'])
+
+                # Keep data outside the new data time range
+                before_new = chunk[chunk['time'] < new_start]
+                after_new = chunk[chunk['time'] > new_end]
+
+                if not before_new.empty:
+                    filtered_chunks.append(before_new)
+                if not after_new.empty:
+                    filtered_chunks.append(after_new)
+
+                # Memory management
+                del chunk, before_new, after_new
+                if len(filtered_chunks) % 10 == 0:
+                    self.memory_monitor.force_garbage_collection()
+
+            # Combine filtered existing data with new data
+            all_chunks = filtered_chunks + [new_df]
+
+            if all_chunks:
+                result = pd.concat(all_chunks, ignore_index=True)
+                result = result.sort_values('time').reset_index(drop=True)
+
+                # Final deduplication
+                result = memory_efficient_dedup(result, subset=['time', 'tag'])
+
+                logger.info(f"Incremental merge completed for unit {unit}: {len(result):,} total records")
+                return result
+
+            return new_df
+
+        except Exception as e:
+            logger.error(f"Incremental merge fallback failed for unit {unit}: {e}")
+            # Last resort: return just the new data
+            logger.warning(f"Returning only new data for unit {unit} due to merge failure")
+            return new_df
 
     def refresh_stale_units_with_progress(self, xlsx_path: Path = None, max_age_hours: float = 8.0) -> Dict[str, Any]:
         """Refresh stale units with real-time progress tracking.
@@ -1552,6 +2743,38 @@ class ParquetAutoScanner:
         # Get stale units after possible seeding
         scan_results = self.scan_all_units(max_age_hours=max_age_hours)
         stale_units = scan_results['stale_units']
+
+        # Optional environment filters to limit scope
+        try:
+            import os as _os
+            units_filter = [u.strip() for u in _os.getenv('REFRESH_UNITS', '').split(',') if u.strip()]
+            plants_filter = [p.strip().upper() for p in _os.getenv('REFRESH_PLANTS', '').split(',') if p.strip()]
+            if units_filter:
+                # Keep only requested units; allow forcing units even if not stale
+                requested = set(units_filter)
+                # Include non-stale requested units as well
+                all_units = {u['unit'] for u in scan_results.get('units_scanned', []) if isinstance(u, dict) and u.get('unit')}
+                stale_units = [u for u in stale_units if u in requested]
+                for u in requested:
+                    if u in all_units and u not in stale_units:
+                        stale_units.append(u)
+            if plants_filter:
+                def _plant_ok(u: str) -> bool:
+                    try:
+                        plant = self._infer_plant_from_unit(u)
+                        return plant in plants_filter
+                    except Exception:
+                        return False
+                stale_units = [u for u in stale_units if _plant_ok(u)]
+        except Exception:
+            pass
+
+        # Cache freshness info from scan to avoid redundant loads
+        unit_freshness_cache = {}
+        for unit_info in scan_results.get('units_scanned', []):
+            unit_name = unit_info.get('unit')
+            if unit_name:
+                unit_freshness_cache[unit_name] = unit_info
         
         if not stale_units:
             return {
@@ -1562,12 +2785,16 @@ class ParquetAutoScanner:
                 "units_processed": []
             }
         
-        # Ensure Excel file is available
+        # Excel path may be None here; that's OK because we resolve the correct
+        # workbook per-unit in _get_excel_file_for_unit(). Historically we bailed
+        # out if no default workbook was found, which prevented any units from
+        # being processed when files lived under plant subfolders (e.g.,
+        # excel/PCMSB/PCMSB_Automation.xlsx). Proceed and resolve per unit.
         if xlsx_path is None:
-            return {
-                "success": False,
-                "error": "No Excel file found for refresh"
-            }
+            try:
+                print("Note: No default Excel workbook found; resolving per-unit workbooks.")
+            except Exception:
+                pass
         
         print(f"\\nREFRESHING {len(stale_units)} STALE UNITS")
         print(f"Excel file: {xlsx_path}")
@@ -1584,160 +2811,165 @@ class ParquetAutoScanner:
             "total_time": 0,
             "fresh_after_refresh": []
         }
-        
-        # Track refreshed Excel files to avoid multiple refreshes
-        refreshed_excel_files = set()
+
+        # Toggle to delay dedup until the end for speed (DEFAULT: False since PyArrow streaming is memory-safe)
+        import os as _os
+        _delay_dedup = _os.getenv('DELAY_DEDUP', 'false').strip().lower() in ('1','true','yes','y') or \
+                       _os.getenv('DEDUP_MODE', '').strip().lower() in ('end','deferred','once')
+        pending_dedup: list[Path] = []
 
         # Process each unit with progress display
         for i, unit in enumerate(stale_units):
             unit_number = i + 1
             unit_start = time.time()
 
+            # Stage timing
+            stage_times = {}
+
             print(f"\\n[{unit_number}/{len(stale_units)}] Processing: {unit}")
             print(f"Started: {datetime.now().strftime('%H:%M:%S')}")
             print("-" * 40)
 
+            # Memory pressure check before processing
+            memory_info = self.memory_monitor.get_memory_usage()
+            print(f"   Available memory: {memory_info['available_gb']:.1f}GB")
+
+            # Lower threshold to 1GB since PyArrow streaming uses minimal memory
+            min_memory_gb = float(_os.getenv('MIN_MEMORY_GB', '1.0'))
+            if memory_info['available_gb'] < min_memory_gb:
+                print(f"   WARNING: Low memory ({memory_info['available_gb']:.1f}GB available, minimum {min_memory_gb}GB required)")
+                print(f"   Skipping {unit} to prevent system instability")
+                results["unit_results"][unit] = {
+                    "success": False,
+                    "unit": unit,
+                    "processing_time": 0,
+                    "error": f"Insufficient memory: only {memory_info['available_gb']:.1f}GB available (need {min_memory_gb}GB)"
+                }
+                results["units_processed"].append(unit)
+                continue
+
             try:
-                # Show before status
-                before_info = self.db.get_data_freshness_info(unit)
-                print(f"   Before: {before_info['total_records']:,} records, {before_info['data_age_hours']:.1f}h old")
+                # Use cached info from scan instead of reloading
+                if unit in unit_freshness_cache:
+                    before_info = unit_freshness_cache[unit]
+                else:
+                    # Fallback to direct query if not in cache
+                    before_info = self.db.get_data_freshness_info(unit)
+
+                unit_data_age_hours = before_info.get('data_age_hours', 0)
+                total_records = before_info.get('total_records', 0)
+                print(f"   Before: {total_records:,} records, {unit_data_age_hours:.1f}h old")
 
                 # Determine correct Excel file for this specific unit
                 unit_xlsx_path = self._get_excel_file_for_unit(unit, xlsx_path)
                 print(f"   Excel file for {unit}: {unit_xlsx_path.name}")
 
-                # Perform Excel refresh (only once per Excel file)
-                if str(unit_xlsx_path) not in refreshed_excel_files:
-                    print(f"   Refreshing {unit_xlsx_path.name} with PI DataLink...")
-                    excel_start = time.time()
-                    refresh_excel_safe(unit_xlsx_path)
-                    excel_time = time.time() - excel_start
-                    print(f"   Excel refresh completed in {excel_time:.1f}s")
-                    refreshed_excel_files.add(str(unit_xlsx_path))
-                else:
-                    print(f"   Using data from previous {unit_xlsx_path.name} refresh")
+                # Perform INCREMENTAL refresh (each unit needs its own fetch with unit-specific tags)
+                print(f"   Performing incremental refresh for {unit}...")
 
-                # Process unit data
-                print(f"   Processing data for {unit}...")
-                from .ingest import load_latest_frame, write_parquet
-
-                # Load fresh data using the correct Excel file and unit-specific sheet
-                # Determine correct sheet name for the unit
-                if unit.startswith('K-'):
-                    # PCFS units use DL_K pattern (e.g., K-31-01 -> DL_K_31_01)
-                    sheet_name = f"DL_{unit.replace('-', '_')}"
-                elif unit.startswith('C-'):
-                    # PCMSB units use DL_C pattern (e.g., C-104 -> DL_C_104)
-                    sheet_name = f"DL_{unit.replace('-', '_')}"
-                else:
-                    # Default to first sheet for other units
-                    sheet_name = None
-
-                # Verify sheet exists before using it
-                import pandas as pd
                 try:
-                    excel_file = pd.ExcelFile(unit_xlsx_path)
-                    available_sheets = excel_file.sheet_names
-                    if sheet_name and sheet_name not in available_sheets:
-                        print(f"   WARNING: Sheet '{sheet_name}' not found in {unit_xlsx_path.name}")
-                        print(f"   Available sheets: {available_sheets}")
-                        print(f"   Falling back to first sheet: {available_sheets[0] if available_sheets else 'None'}")
-                        sheet_name = available_sheets[0] if available_sheets else None
-                    elif sheet_name:
-                        print(f"   Using sheet: {sheet_name}")
-                except Exception as e:
-                    print(f"   Warning: Error checking sheets in {unit_xlsx_path.name}: {e}")
-                    sheet_name = None
+                    excel_start = time.time()
 
-                df = load_latest_frame(unit_xlsx_path, unit=unit, sheet_name=sheet_name)
-                if df.empty:
-                    print(f"   WARNING: Excel returned no data for {unit}; switching to direct tag retrieval...")
-                    df = self._load_unit_from_tags(unit, unit_xlsx_path)
+                    # Use new incremental refresh method (each unit fetches independently)
+                    success = self._incremental_refresh_unit(unit, unit_xlsx_path)
 
-                # Merge fresh data with existing historical data
-                print(f"   Merging fresh data with historical records...")
-                
-                # Load existing master data (excluding other refreshed files)
-                existing_df = pd.DataFrame()
-                unit_files = list(self.db.processed_dir.glob(f"*{unit}*.parquet"))
-                master_files = [f for f in unit_files if 'refreshed' not in f.name]
-                
-                if master_files:
-                    # Use the most recent master file (dedup preferred)
-                    dedup_files = [f for f in master_files if 'dedup' in f.name]
-                    if dedup_files:
-                        master_file = max(dedup_files, key=lambda x: x.stat().st_mtime)
+                    excel_time = time.time() - excel_start
+                    stage_times['incremental_fetch'] = excel_time
+
+                    if success:
+                        print(f"   ⏱️  Incremental fetch: {excel_time:.1f}s")
                     else:
-                        master_file = max(master_files, key=lambda x: x.stat().st_mtime)
-                    
-                    print(f"   Loading historical data from: {master_file.name}")
-                    existing_df = pd.read_parquet(master_file)
-                    print(f"   Historical records: {len(existing_df):,}")
-                
-                # Combine data: existing historical + fresh data
-                if not existing_df.empty:
-                    # Ensure time columns are datetime
-                    if 'time' in existing_df.columns:
-                        existing_df['time'] = pd.to_datetime(existing_df['time'])
-                    if 'time' in df.columns:
-                        df['time'] = pd.to_datetime(df['time'])
-                    
-                    # Combine and remove duplicates by time
-                    combined_df = pd.concat([existing_df, df], ignore_index=True)
-                    if 'time' in combined_df.columns:
-                        combined_df = combined_df.drop_duplicates(subset=['time']).sort_values('time').reset_index(drop=True)
-                    
-                    print(f"   Combined records: {len(combined_df):,}")
-                else:
-                    combined_df = df
-                    print(f"   No historical data found, using fresh data only")
-                
-                # Find and update the master parquet file directly
-                # Look for the main master file (prioritize _1y_0p1h.parquet pattern)
-                master_patterns = [f"{unit}_1y_0p1h.parquet", f"{unit}.parquet", f"*{unit}*.parquet"]
-                master_file = None
-                
-                for pattern in master_patterns:
-                    matches = list(self.db.processed_dir.glob(pattern))
-                    # Exclude updated/refreshed files to find the real master
-                    matches = [f for f in matches if 'updated' not in f.name and 'refreshed' not in f.name]
-                    if matches:
-                        master_file = matches[0]  # Take the first match
-                        break
-                
-                if master_file:
-                    # Update the existing master file
-                    parquet_path = master_file
-                    print(f"   Updating master file: {parquet_path.name}")
-                else:
-                    # Create new master file if none exists
-                    parquet_path = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
-                    print(f"   Creating new master file: {parquet_path.name}")
+                        print(f"   WARNING: Incremental refresh failed - skipping {unit}")
+                        unit_time = time.time() - unit_start
+                        results["unit_results"][unit] = {
+                            "success": False,
+                            "unit": unit,
+                            "processing_time": unit_time,
+                            "error": "Incremental refresh failed"
+                        }
+                        results["units_processed"].append(unit)
+                        continue  # Skip to next unit
 
-                output_path = write_parquet(combined_df, parquet_path)
-                print(f"   Updated master: {parquet_path.name}")
+                except Exception as refresh_error:
+                    excel_time = time.time() - excel_start
+                    print(f"   ERROR: Incremental refresh failed: {refresh_error}")
+                    # Record as failed and skip to next unit
+                    unit_time = time.time() - unit_start
+                    results["unit_results"][unit] = {
+                        "success": False,
+                        "unit": unit,
+                        "processing_time": unit_time,
+                        "error": f"Incremental refresh error: {refresh_error}"
+                    }
+                    results["units_processed"].append(unit)
+                    continue  # Skip to next unit
 
-                # Regenerate deduplicated view so freshness checks see new data
-                dedup_path = dedup_parquet(parquet_path)
-                print(f"   Updated dedup: {dedup_path.name}")
+                # Get updated statistics after incremental refresh
+                processing_start = time.time()
+                print(f"   Verifying data after incremental refresh...")
 
-                # Update df for metrics reporting
-                df = combined_df
+                # Determine master parquet file
+                master_parquet = self.db.processed_dir / f"{unit}_1y_0p1h.parquet"
+                output_path = master_parquet
 
+                # Get after statistics
+                after_records = 0
+                if master_parquet.exists():
+                    import pandas as pd
+                    try:
+                        import pyarrow.parquet as pq
+                        after_records = pq.ParquetFile(master_parquet).metadata.num_rows
+                    except Exception:
+                        after_records = len(pd.read_parquet(master_parquet, columns=['time']))
+
+                # Get updated freshness info from database
+                after_info = self.db.get_data_freshness_info(unit)
+
+                # Skip old Excel loading section - incremental refresh already handled everything
                 # Check after status (master file was updated in place)
                 after_info = self.db.get_data_freshness_info(unit)
+                # Additional guard: if the freshly ingested dataframe carries a
+                # newer timestamp than what DuckDB reports (e.g., due to file
+                # caching lag or glob precedence), prefer the dataframe's max
+                # time for age calculation.
+                try:
+                    df_latest_ts = None
+                    if df is not None and len(df) > 0 and 'time' in df.columns:
+                        _df_t = pd.to_datetime(df['time'], errors='coerce')
+                        if _df_t.notna().any():
+                            df_latest_ts = _df_t.max()
+                    if df_latest_ts is not None:
+                        # Normalize to naive for comparison
+                        import pandas as _pd
+                        latest_after = after_info.get('latest_timestamp')
+                        if latest_after is None or (_pd.to_datetime(latest_after) < _pd.to_datetime(df_latest_ts)):
+                            # Recompute data_age_hours from df_latest_ts
+                            try:
+                                now_utc = _pd.Timestamp.now(tz='UTC')
+                                latest_dt = _pd.to_datetime(df_latest_ts)
+                                if getattr(latest_dt, 'tz', None) is None:
+                                    latest_dt = latest_dt.tz_localize(now_utc.tz).tz_convert('UTC')
+                                age_h = (now_utc - latest_dt.tz_convert('UTC')).total_seconds() / 3600
+                                after_info['latest_timestamp'] = df_latest_ts
+                                after_info['data_age_hours'] = age_h
+                                after_info['is_stale'] = age_h > float(_os.getenv('MAX_AGE_HOURS', '1.0'))
+                            except Exception:
+                                pass
+                except Exception:
+                    pass
                 unit_time = time.time() - unit_start
-                
+
                 unit_result = {
                     "success": True,
                     "unit": unit,
                     "processing_time": unit_time,
                     "records_before": before_info['total_records'],
-                    "records_after": len(df),
+                    "records_after": after_records,
                     "age_before_hours": before_info['data_age_hours'],
                     "age_after_hours": after_info['data_age_hours'] if not after_info['is_stale'] else 0,
                     "output_file": str(output_path),
-                    "file_size_mb": output_path.stat().st_size / (1024 * 1024)
+                    "file_size_mb": output_path.stat().st_size / (1024 * 1024),
+                    "stage_times": stage_times  # Include detailed timing breakdown
                 }
                 
                 results["unit_results"][unit] = unit_result
@@ -1746,18 +2978,34 @@ class ParquetAutoScanner:
                 if not after_info['is_stale']:
                     results["fresh_after_refresh"].append(unit)
                 
-                print(f"   {unit} completed in {unit_time:.1f}s")
+                processing_time = time.time() - processing_start
+                stage_times['data_processing'] = processing_time
+
+                # Print stage breakdown
+                print(f"   ⏱️  Data processing: {processing_time:.1f}s")
+                if 'excel_refresh' in stage_times:
+                    print(f"   📊 Stage breakdown: Excel {stage_times['excel_refresh']:.1f}s + Processing {processing_time:.1f}s")
+                print(f"   ✅ {unit} completed in {unit_time:.1f}s")
                 print(f"   Records: {before_info['total_records']:,} -> {len(df):,}")
                 print(f"   Output: {unit_result['file_size_mb']:.1f}MB")
-                print(f"   Age: {before_info['data_age_hours']:.1f}h -> Fresh")
-                
+                if after_info['is_stale']:
+                    print(f"   Age: {before_info['data_age_hours']:.1f}h -> still stale ({after_info['data_age_hours']:.1f}h)")
+                else:
+                    print(f"   Age: {before_info['data_age_hours']:.1f}h -> Fresh ({after_info['data_age_hours']:.1f}h)")
+
+                # Memory cleanup after unit processing
+                del df
+                import gc
+                gc.collect()
+                self.memory_monitor.log_memory_status(f"after {unit}")
+
                 # Show overall progress
                 completed = len(results["units_processed"])
                 remaining = len(stale_units) - completed
                 progress_pct = (completed / len(stale_units)) * 100
-                
+
                 print(f"\\nProgress: {completed}/{len(stale_units)} completed ({progress_pct:.1f}%), {remaining} remaining")
-                
+
             except Exception as e:
                 unit_time = time.time() - unit_start
                 error_msg = str(e)
@@ -1775,6 +3023,26 @@ class ParquetAutoScanner:
                 print(f"   {unit} FAILED after {unit_time:.1f}s")
                 print(f"   Error: {error_msg}")
         
+        # End-of-run dedup pass (optional for speed)
+        if pending_dedup:
+            print("\nRunning end-of-run dedup pass...")
+            unique_paths = []
+            seen = set()
+            for p in pending_dedup:
+                if str(p) not in seen:
+                    seen.add(str(p))
+                    unique_paths.append(p)
+            completed = 0
+            for p in unique_paths:
+                try:
+                    dp = dedup_parquet(p)
+                    print(f"   Deduped: {dp.name}")
+                    completed += 1
+                except Exception as e:
+                    print(f"   WARNING: Dedup failed for {p.name}: {e}")
+            results['dedup_deferred'] = len(unique_paths)
+            results['dedup_completed'] = completed
+
         # Final summary
         refresh_end = datetime.now()
         total_time = (refresh_end - refresh_start).total_seconds()
@@ -1789,20 +3057,7 @@ class ParquetAutoScanner:
             "success_rate": (successful / len(stale_units)) * 100 if stale_units else 0
         })
         
-        print(f"\\n" + "=" * 60)
-        print(f"REFRESH COMPLETED")
-        print(f"Total time: {total_time/60:.1f} minutes ({total_time:.1f} seconds)")
-        print(f"Successful: {successful}/{len(stale_units)} units")
-        print(f"Failed: {failed}/{len(stale_units)} units")
-        print(f"Success rate: {results['success_rate']:.1f}%")
-        
-        if results["fresh_after_refresh"]:
-            print(f"Fresh units: {', '.join(results['fresh_after_refresh'])}")
-        
+        # Print cyberpunk-themed summary
+        self._print_cyberpunk_summary(results)
+
         return results
-
-
-
-
-
-

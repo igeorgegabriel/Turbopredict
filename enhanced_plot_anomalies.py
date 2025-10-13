@@ -118,16 +118,16 @@ def create_enhanced_plots():
 
         if freshness_analysis.get('stale_tags'):
             stale_count = len(freshness_analysis['stale_tags'])
-            print(f"    ⚠️  Found {stale_count} stale tags (>24h old)")
+            print(f"    WARNING: Found {stale_count} stale tags (>24h old)")
 
             # Generate and save stale data report
             stale_report = stale_detector.generate_stale_data_report(recent_data, unit)
             report_file = unit_dir / f"{unit}_stale_data_report.txt"
             with open(report_file, 'w') as f:
                 f.write(stale_report)
-            print(f"    📄 Stale data report saved: {report_file.name}")
+            print(f"    Report: Stale data report saved: {report_file.name}")
         else:
-            print(f"    ✅ All tags have fresh data")
+            print(f"    OK: All tags have fresh data")
 
         # Store freshness analysis for plotting
         globals()['_current_freshness_analysis'] = freshness_analysis
@@ -310,15 +310,18 @@ def create_enhanced_tag_plot(unit, tag, tag_info, data, unit_dir, anomaly_detail
         verify_by_tag = details.get('verification_times_by_tag', {}) if isinstance(details, dict) else {}
         ae_times = details.get('ae_times', []) if isinstance(details, dict) else []
 
-        # Helper to mask times present in this tag's series
+        # FIXED: Improved time matching function
         def _mask_times(ts_list):
             if not ts_list:
                 return np.zeros(len(tag_data), dtype=bool)
-            tset = set(pd.to_datetime(ts_list))
-            series_t = pd.to_datetime(tag_data['time'])
-            if getattr(series_t.dt, 'tz', None) is not None:
-                series_t = series_t.dt.tz_convert(None)
-            return series_t.isin(tset).values
+            
+            # Convert both to naive timestamps for consistent comparison
+            input_times = pd.to_datetime(ts_list).dt.tz_localize(None)
+            series_t = pd.to_datetime(tag_data['time']).dt.tz_localize(None)
+            
+            # Use numpy for efficient matching
+            mask = np.isin(series_t.values, input_times.values)
+            return mask
 
         # 2.5-sigma candidate points (larger, more visible)
         sigma_times = sigma_by_tag.get(tag, []) or []

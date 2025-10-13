@@ -1,0 +1,349 @@
+version: '3.8'
+
+services:
+  # Unit Containers - Each unit runs in isolation
+  k-12-01:
+    build: ./containers/unit-base
+    container_name: turbopredict-k-12-01
+    environment:
+      - UNIT_ID=K-12-01
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/K-12-01:/app/data/K-12-01
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/K-12-01:/app/logs/K-12-01
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  k-16-01:
+    build: ./containers/unit-base
+    container_name: turbopredict-k-16-01
+    environment:
+      - UNIT_ID=K-16-01
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/K-16-01:/app/data/K-16-01
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/K-16-01:/app/logs/K-16-01
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  k-19-01:
+    build: ./containers/unit-base
+    container_name: turbopredict-k-19-01
+    environment:
+      - UNIT_ID=K-19-01
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/K-19-01:/app/data/K-19-01
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/K-19-01:/app/logs/K-19-01
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  k-31-01:
+    build: ./containers/unit-base
+    container_name: turbopredict-k-31-01
+    environment:
+      - UNIT_ID=K-31-01
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/K-31-01:/app/data/K-31-01
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/K-31-01:/app/logs/K-31-01
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  xt-07002:
+    build: ./containers/unit-base
+    container_name: turbopredict-xt-07002
+    environment:
+      - UNIT_ID=XT-07002
+      - PLANT=PCMSB
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/XT-07002:/app/data/XT-07002
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/XT-07002:/app/logs/XT-07002
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  c-02001:
+    build: ./containers/unit-base
+    container_name: turbopredict-c-02001
+    environment:
+      - UNIT_ID=C-02001
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/C-02001:/app/data/C-02001
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/C-02001:/app/logs/C-02001
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  c-104:
+    build: ./containers/unit-base
+    container_name: turbopredict-c-104
+    environment:
+      - UNIT_ID=C-104
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/C-104:/app/data/C-104
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/C-104:/app/logs/C-104
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  c-13001:
+    build: ./containers/unit-base
+    container_name: turbopredict-c-13001
+    environment:
+      - UNIT_ID=C-13001
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/C-13001:/app/data/C-13001
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/C-13001:/app/logs/C-13001
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  c-1301:
+    build: ./containers/unit-base
+    container_name: turbopredict-c-1301
+    environment:
+      - UNIT_ID=C-1301
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/C-1301:/app/data/C-1301
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/C-1301:/app/logs/C-1301
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  c-1302:
+    build: ./containers/unit-base
+    container_name: turbopredict-c-1302
+    environment:
+      - UNIT_ID=C-1302
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/C-1302:/app/data/C-1302
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/C-1302:/app/logs/C-1302
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  c-201:
+    build: ./containers/unit-base
+    container_name: turbopredict-c-201
+    environment:
+      - UNIT_ID=C-201
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/C-201:/app/data/C-201
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/C-201:/app/logs/C-201
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  c-202:
+    build: ./containers/unit-base
+    container_name: turbopredict-c-202
+    environment:
+      - UNIT_ID=C-202
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/C-202:/app/data/C-202
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/C-202:/app/logs/C-202
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  07-mt01-k001:
+    build: ./containers/unit-base
+    container_name: turbopredict-07-mt01-k001
+    environment:
+      - UNIT_ID=07-MT01-K001
+      - PLANT=PCFS
+      - PYTHONPATH=/app
+      - DISABLE_DUCKDB=1
+    volumes:
+      - ./data/units/07-MT01-K001:/app/data/07-MT01-K001
+      - ./data/shared/excel:/app/excel:ro
+      - ./logs/units/07-MT01-K001:/app/logs/07-MT01-K001
+      - ./config/units:/app/config/units:ro
+      - ./pi_monitor:/app/pi_monitor:ro
+      - ./scripts:/app/scripts:ro
+      - ./requirements.txt:/app/requirements.txt:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  # Orchestrator - Central Management
+  orchestrator:
+    build: ./containers/orchestrator
+    container_name: turbopredict-orchestrator
+    ports:
+      - "8080:8080"
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./logs/orchestrator:/app/logs
+      - ./containers/orchestrator/templates:/app/templates:ro
+      - ./containers/orchestrator/static:/app/static:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+    depends_on:
+      - k-12-01
+      - k-16-01
+      - k-19-01
+      - k-31-01
+      - xt-07002
+      - c-02001
+      - c-104
+      - c-13001
+      - c-1301
+      - c-1302
+      - c-201
+      - c-202
+      - 07-mt01-k001
+
+  # Monitoring Services
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: turbopredict-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus:/etc/prometheus:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: turbopredict-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning:ro
+    networks:
+      - turbopredict-network
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+# Networks
+networks:
+  turbopredict-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# Volumes
+volumes:
+  prometheus_data:
+  grafana_data:

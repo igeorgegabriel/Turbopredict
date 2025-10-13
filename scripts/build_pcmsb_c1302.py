@@ -22,7 +22,7 @@ def read_tags(path: Path) -> list[str]:
 
 
 def main() -> int:
-    xlsx = PROJECT_ROOT / "excel" / "PCMSB_Automation.xlsx"
+    xlsx = PROJECT_ROOT / "excel" / "PCMSB" / "PCMSB_Automation.xlsx"
     tags_file = PROJECT_ROOT / "config" / "tags_pcmsb_c1302.txt"
     out_parquet = PROJECT_ROOT / "data" / "processed" / "C-1302_1y_0p1h.parquet"
 
@@ -33,8 +33,8 @@ def main() -> int:
     end = "*"
     step = "-0.1h"
     work_sheet = "DL_WORK"
-    settle_seconds = 1.5
-    visible = True
+    settle_seconds = 2.0      # Increased settle time for PCMSB
+    visible = False
 
     tags = read_tags(tags_file)
     if not tags:

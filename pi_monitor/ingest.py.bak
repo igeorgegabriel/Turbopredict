@@ -1,0 +1,232 @@
+from __future__ import annotations
+
+from pathlib import Path
+import os
+import time
+import re
+import pandas as pd
+
+
+def _detect_header_row(raw: pd.DataFrame, search_rows: int = 10) -> int | None:
+    """Return index of header row containing 'TIME' within first search_rows."""
+    for i in range(min(search_rows, len(raw))):
+        vals = [str(v).strip().upper() if isinstance(v, str) else v for v in raw.iloc[i].tolist()]
+        if "TIME" in vals:
+            return i
+    return None
+
+
+def _try_parse_time_value_block(raw: pd.DataFrame, max_scan_cols: int = 64)\1import warnings as _w\n    with _w.catch_warnings():\n        _w.simplefilter("ignore")\n        t1 = pd.to_datetime(tser, errors='coerce')
+        # Fallback for Excel serial numbers
+        try:
+            num = pd.to_numeric(tser, errors='coerce')
+            t2 = pd.to_datetime(num, unit='d', origin='1899-12-30')
+        except Exception:
+            t2 = pd.Series([pd.NaT] * len(tser))
+        # Choose the conversion with more non-null
+        t = t1
+        if t2.notna().sum() > t1.notna().sum():
+            t = t2
+
+        # Value column: numeric
+        v = pd.to_numeric(vser, errors='coerce')
+
+        # Score this pair
+        valid = t.notna() & v.notna()
+        count = int(valid.sum())
+        if count > best_count and count >= 5:  # require at least 5 rows
+            best = (t, v)
+            best_count = count
+
+    if best is None:
+        return None
+
+    t, v = best
+    df = pd.DataFrame({'time': t, 'value': v}).dropna(subset=['time', 'value'])
+    if df.empty:
+        return None
+    # Sort and reset
+    df = df.sort_values('time').reset_index(drop=True)
+    return df
+
+
+def _read_sheet_values_with_openpyxl(xlsx: Path, sheet_name: str | int | None, max_rows: int = 200, max_cols: int = 16) -> pd.DataFrame:
+    """Load raw cell values via openpyxl (data_only=True) to get computed results.
+
+    Pandas/openpyxl returns formula strings by default; using openpyxl directly with
+    data_only=True allows reading cached values saved by Excel after RefreshAll.
+    """
+    import openpyxl
+
+    wb = openpyxl.load_workbook(xlsx, data_only=True, read_only=True)
+    try:
+        ws = wb[wb.sheetnames[0]] if sheet_name is None else wb[sheet_name]
+        rows = []
+        rcount = 0
+        for row in ws.iter_rows(min_row=1, max_row=max_rows, max_col=max_cols, values_only=True):
+            rows.append(list(row))
+            rcount += 1
+            if rcount >= max_rows:
+                break
+        import pandas as pd
+        df = pd.DataFrame(rows)
+    finally:
+        wb.close()
+    return df
+
+
+def _infer_unit_from_header(header: str) -> str | None:
+    """Infer unit code from a header like 'PCFS K-31-01 ST_PERFORMANCE' or 'PCFS K-31 ...'."""
+    m = re.search(r"\b([A-Z]+-\d{2}(?:-\d{2})?)\b", header.upper())
+    return m.group(1) if m else None
+
+
+def _infer_plant_unit_tag(header: str) -> tuple[str | None, str | None, str | None]:
+    """Attempt to infer plant, unit, tag from a column header.
+
+    Example: 'PCFS K-31-01 ST_PERFORMANCE' -> (PCFS, K-31-01, ST_PERFORMANCE)
+    """
+    s = header.strip()
+    m = re.match(r"^([A-Za-z0-9_\-]+)\s+([A-Za-z]+-\d{2}(?:-\d{2})?)\s+(.+)$", s)
+    if m:
+        plant = m.group(1)
+        unit = m.group(2)
+        tag = m.group(3).strip()
+        return plant, unit, tag
+    # fallback: unit only via previous helper; tag as header
+    unit = _infer_unit_from_header(header)
+    return None, unit, header.strip()
+
+
+def load_latest_frame(
+    xlsx: Path,
+    time_label: str = "TIME",
+    value_col_hint: str = "ST_PERFORMANCE",
+    unit: str | None = None,
+    plant: str | None = None,
+    tag: str | None = None,
+    sheet_name: str | int | None = None,
+) -> pd.DataFrame:
+    """Load a tidy time/value DataFrame from an Excel file.
+
+    - Finds the header row that contains the time label (default 'TIME').
+    - Chooses a value column ending with value_col_hint; falls back to first non-time column.
+    - Returns DataFrame with columns ['time', 'value'] sorted by time.
+    """
+    xlsx = Path(xlsx)
+
+    raw = pd.read_excel(xlsx, header=None, engine="openpyxl", sheet_name=sheet_name)
+    
+    # Handle case where sheet_name=None returns dict of sheets
+    if isinstance(raw, dict):
+        # Use first sheet if multiple sheets returned
+        sheet_names = list(raw.keys())
+        raw = raw[sheet_names[0]]
+        if sheet_name is None:
+            sheet_name = sheet_names[0]  # Use the first sheet for subsequent read
+    
+    hdr_idx = _detect_header_row(raw)
+    if hdr_idx is None:
+        # Heuristic fallback for sheets that contain direct PISampDat output without headers
+        parsed = _try_parse_time_value_block(raw)
+        if parsed is None:
+            # Try again by reading values via openpyxl with data_only=True
+            try:
+                raw2 = _read_sheet_values_with_openpyxl(xlsx, sheet_name)
+                parsed = _try_parse_time_value_block(raw2, max_scan_cols=64)
+            except Exception:
+                parsed = None
+        if parsed is None:
+            raise RuntimeError("Header row with 'TIME' not found in first rows.")
+        # Attach optional markers and return
+        if unit:
+            parsed["unit"] = unit
+        return parsed
+
+    df = pd.read_excel(xlsx, header=hdr_idx, engine="openpyxl", sheet_name=sheet_name)
+
+    # map columns
+    time_col = next(c for c in df.columns if str(c).strip().upper() == time_label)
+
+    val_col = next((c for c in df.columns if str(c).strip().upper().endswith(value_col_hint)), None)
+    if val_col is None:
+        cand = [c for c in df.columns if c != time_col]
+        if not cand:
+            raise RuntimeError("No value column found.")
+        val_col = cand[0]
+
+    original_value_name = str(val_col)
+    df = df.rename(columns={time_col: "time", val_col: "value"})
+    df = df[[c for c in df.columns if not str(c).startswith("Unnamed")]]
+    df["time"] = pd.to_datetime(df["time"], errors="coerce")
+    df["value"] = pd.to_numeric(df["value"], errors="coerce")
+    df = df.dropna(subset=["time", "value"]).sort_values("time").reset_index(drop=True)
+
+    # Attach markers for plant/unit/tag so many tags can live in one dataset
+    infer_plant, infer_unit, infer_tag = _infer_plant_unit_tag(original_value_name)
+    if unit or plant or tag or infer_unit or infer_plant or infer_tag:
+        if plant or infer_plant:
+            df["plant"] = (plant or infer_plant)
+        if unit or infer_unit:
+            df["unit"] = (unit or infer_unit)
+        if tag or infer_tag:
+            df["tag"] = _slugify_tag(tag or infer_tag)
+    return df
+
+
+def write_parquet(df: pd.DataFrame, out_path: Path, *, engine: str | None = None) -> Path:
+    """Write DataFrame to Parquet atomically with engine fallback.
+
+    - Writes to a temp file first, then replaces the target (best‑effort atomic).
+    - Prefers 'pyarrow'; falls back to 'fastparquet'.
+    """
+    out_path = Path(out_path)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    engines = [engine] if engine else ["pyarrow", "fastparquet"]
+    last_err: Exception | None = None
+    for eng in engines:
+        tmp_path = out_path.with_suffix(out_path.suffix + f".tmp-{int(time.time()*1000)}")
+        try:
+            # Write to temp path first
+            df.to_parquet(tmp_path, index=False, engine=eng)
+            try:
+                os.replace(tmp_path, out_path)
+            except Exception as rep_err:
+                # Fallback: copy over if replace is blocked, then remove tmp
+                try:
+                    import shutil
+                    shutil.copy2(str(tmp_path), str(out_path))
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+                except Exception as copy_err:
+                    # Cleanup and try next engine
+                    last_err = rep_err or copy_err
+                    try:
+                        os.remove(tmp_path)
+                    except Exception:
+                        pass
+                    continue
+            return out_path
+        except Exception as e:
+            last_err = e
+            # Ensure tmp cleaned up if created
+            try:
+                if tmp_path.exists():
+                    os.remove(tmp_path)
+            except Exception:
+                pass
+            continue
+
+    raise RuntimeError(
+        "Parquet write failed. Install 'pyarrow' (preferred) or 'fastparquet'.\n"
+        f"Last error: {last_err}"
+    )
+def _slugify_tag(name: str) -> str:
+    t = re.sub(r"\s+", "_", name.strip())
+    t = re.sub(r"[^A-Za-z0-9_\-]", "_", t)
+    return t
+
+

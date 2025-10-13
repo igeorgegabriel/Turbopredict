@@ -7,13 +7,22 @@ import pandas as pd
 import sys
 from pathlib import Path
 
-def debug_pcmsb_excel():
+def find_time_columns(df_columns):
+    """Finds time-related columns in a list of column names."""
+    time_keywords = ['TIME', 'TIMESTAMP', 'DATE']
+    return [col for col in df_columns if any(keyword in str(col).upper() for keyword in time_keywords)]
+
+def debug_pcmsb_excel(excel_path_str="excel/PCMSB_Automation.xlsx"):
     """Debug the PCMSB Excel file structure"""
 
     print("DEBUGGING PCMSB EXCEL FILE STRUCTURE")
     print("=" * 60)
 
-    excel_path = Path("excel/PCMSB_Automation.xlsx")
+    # Allow passing file path as an argument
+    if len(sys.argv) > 1:
+        excel_path = Path(sys.argv[1])
+    else:
+        excel_path = Path(excel_path_str)
 
     if not excel_path.exists():
         print("ERROR: PCMSB_Automation.xlsx not found!")
@@ -41,9 +50,7 @@ def debug_pcmsb_excel():
                 print(f"Columns: {list(df_preview.columns)}")
 
                 # Look for time-related columns
-                time_columns = [col for col in df_preview.columns
-                              if any(keyword in str(col).upper() for keyword in ['TIME', 'TIMESTAMP', 'DATE'])]
-                print(f"Time-related columns: {time_columns}")
+                print(f"Time-related columns: {find_time_columns(df_preview.columns)}")
 
                 # Show first few rows
                 print("First 3 rows:")
@@ -60,9 +67,7 @@ def debug_pcmsb_excel():
                             if not df_skip.empty and not df_skip.isna().all().all():
                                 print(f"  Data found starting from row {skip_rows+1}:")
                                 print(f"  Columns: {list(df_skip.columns)}")
-                                time_cols = [col for col in df_skip.columns
-                                           if any(keyword in str(col).upper() for keyword in ['TIME', 'TIMESTAMP', 'DATE'])]
-                                print(f"  Time columns: {time_cols}")
+                                print(f"  Time columns: {find_time_columns(df_skip.columns)}")
                                 break
                         except:
                             continue
@@ -75,7 +80,7 @@ def debug_pcmsb_excel():
         import traceback
         traceback.print_exc()
 
-def debug_expected_structure():
+def debug_expected_structure(excel_path_str="excel/PCMSB_Automation.xlsx"):
     """Debug what the system expects vs what it finds"""
 
     print(f"\n\nDEBUGGING EXPECTED DATA STRUCTURE")
@@ -83,8 +88,8 @@ def debug_expected_structure():
 
     # Check how the system tries to read PCMSB data
     try:
-        from pi_monitor.parquet_auto_scan import ParquetAutoScanner
-
+        # Dynamically import to avoid hard dependency
+        from pi_monitor.parquet_auto_scan import ParquetAutoScanner # type: ignore
         scanner = ParquetAutoScanner()
 
         # Try to get PCMSB Excel path
@@ -106,6 +111,9 @@ def debug_expected_structure():
         print("3. The PI DataLink didn't populate data correctly")
         print("4. Wrong sheet is being read")
 
+    except ImportError:
+        print("Could not import 'ParquetAutoScanner'.")
+        print("Please run this script in the correct application environment to debug the scanner.")
     except Exception as e:
         print(f"Error checking scanner: {e}")
 

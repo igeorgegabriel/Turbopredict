@@ -1,0 +1,44 @@
+version: 1
+
+# CodeRabbit configuration to act as a senior-engineer gate
+# Adjust to your org’s preferences if you already use CodeRabbit.
+
+review:
+  path_includes:
+    - "**/*.py"
+    - "**/*.md"
+    - "**/*.yml"
+    - "**/*.yaml"
+  path_excludes:
+    - "data/**"
+    - "logs/**"
+    - "reports/**"
+    - "**/__pycache__/**"
+
+  # High-value checks focused on this repo
+  rules:
+    - name: "PI DataLink robustness"
+      description: "Ensure Excel/PI interactions wait for async completion, handle timeouts, and avoid flaky sleeps."
+      severity: critical
+    - name: "Thread safety"
+      description: "Validate PI server coordination locks and cooldowns to prevent concurrent refresh conflicts."
+      severity: high
+    - name: "Parquet I/O integrity"
+      description: "Check atomic writes, dedup, and schema consistency."
+      severity: high
+    - name: "Performance"
+      description: "Avoid loading huge ranges from Excel; prefer dynamic spills and bounded reads."
+      severity: medium
+    - name: "Logging & diagnostics"
+      description: "Make failures actionable with context and clear remediation hints."
+      severity: medium
+
+  summary_as_comment: true
+  block_merge_on_fail: true
+  min_approvals: 1
+  require_explicit_approval: true
+
+annotations:
+  enable_inline_suggestions: true
+  show_severity_badges: true
+

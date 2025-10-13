@@ -1,0 +1,72 @@
+{
+  "config_type": "abf_speed_indicator_tags",
+  "generated_at": "2025-09-28T08:45:00",
+  "purpose": "ABF Speed Indicator tags for precise abnormal behavior compensation",
+  "target_analysis": "option_2_precise_analysis",
+  "description": "ABF plant speed indicator tags identified for speed compensation",
+
+  "abf_speed_tags": {
+    "07-MT001": {
+      "primary_speed_tag": "ABF.07-MT001.SI-07002D_new.PV",
+      "secondary_speed_tag": "ABF.07-MT001.SI-07002MV_new.PV",
+      "tag_type": "speed_indicator",
+      "expected_units": "RPM or Hz",
+      "compensation_ready": true,
+      "data_source": "user_identified",
+      "backup_tags": [
+        "ABF.07-MT001.FI-07054.PV",
+        "ABF.07-MT001.FI-07001.PV"
+      ]
+    }
+  },
+
+  "tag_analysis": {
+    "SI-07002D_new": {
+      "description": "Speed Indicator for 07-MT001 unit - Digital variant",
+      "likely_measurement": "Motor/Drive speed",
+      "compensation_suitability": "excellent"
+    },
+    "SI-07002MV_new": {
+      "description": "Speed Indicator for 07-MT001 unit - Motor Voltage variant",
+      "likely_measurement": "Motor voltage/frequency related to speed",
+      "compensation_suitability": "excellent"
+    }
+  },
+
+  "speed_compensation_strategy": {
+    "07-MT001": {
+      "method": "dual_speed_indicator_analysis",
+      "primary_baseline": "dynamic_from_SI-07002D_data",
+      "secondary_validation": "cross_check_with_SI-07002MV",
+      "compensation_formula": "normalized_value = actual_value * (baseline_speed / current_speed)",
+      "abnormal_threshold_adjustment": "dual_speed_adaptive",
+      "fallback_method": "flow_indicator_compensation"
+    }
+  },
+
+  "data_requirements": {
+    "status": "tags_identified_data_pending",
+    "next_steps": [
+      "Add SI-07002D_new and SI-07002MV_new to ABF Excel data collection",
+      "Verify data availability and quality",
+      "Establish baseline speed ranges",
+      "Implement compensation algorithms"
+    ]
+  },
+
+  "implementation_plan": {
+    "phase_1": "Add speed tags to ABF data collection system",
+    "phase_2": "Collect historical speed data for baseline establishment",
+    "phase_3": "Implement dual-speed compensation algorithm",
+    "phase_4": "Validate compensation effectiveness"
+  },
+
+  "expected_benefits": {
+    "ABF_plant": [
+      "Upgrade from flow-based to true speed compensation",
+      "Dual speed tag validation for highest accuracy",
+      "Improved abnormal behavior detection precision",
+      "Consistent compensation methodology across all plants"
+    ]
+  }
+}

@@ -76,8 +76,36 @@ class ParquetDatabase:
             logger.warning(f"DuckDB unavailable: {e}")
             self.conn = None
 
+    def invalidate_cache(self):
+        """Force invalidation of DuckDB file cache by recreating connection.
+
+        Call this after Parquet files have been updated to ensure fresh reads.
+        """
+        if self.conn is not None:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+            self.conn = None
+            self._init_duckdb()
+            logger.info("DuckDB cache invalidated - connection recreated")
+
     def _parquet_glob(self, dedup_preferred: bool = True) -> str:
-        """Return glob pattern for Parquet reads."""
+        """Return glob pattern for Parquet reads.
+
+        Historically we preferred reading only ``*dedup.parquet`` files for
+        stability, but during refresh runs a unit's master file may be updated
+        before the corresponding ``*.dedup.parquet`` is regenerated (or the
+        dedup step may be deferred). In those cases, restricting to
+        ``*dedup.parquet`` makes freshness checks look stale even though the
+        master file already contains newer rows.
+
+        To support accurate freshness checks, callers that care about "latest"
+        timestamps should request the broader pattern (``dedup_preferred=False``)
+        so both master and dedup files are visible to DuckDB. The
+        ``WHERE unit = ?`` filter in queries ensures we only scan the relevant
+        unit, and ``MAX(time)`` remains correct even if both files are present.
+        """
         return str(self.processed_dir / ("*dedup.parquet" if dedup_preferred else "*.parquet"))
     
     def get_available_parquet_files(self) -> List[Dict[str, Any]]:
@@ -146,6 +174,7 @@ class ParquetDatabase:
             r"^C-\d{2,5}(?:-\d{2})?$",
             r"^XT-\d{5}$",
             r"^\d{2}-MT0?1[-_]?K\d{3}$",
+            r"^\d{2}-K\d{3}$",
         ]
         for p in patterns:
             if re.match(p, t, flags=re.IGNORECASE):
@@ -313,24 +342,46 @@ class ParquetDatabase:
             logger.warning(f"No Parquet files found for unit {unit}")
             return pd.DataFrame()
         
-        # Prioritize files by completeness and freshness: updated > refreshed > newest_of(regular, dedup)
-        updated_files = [f for f in unit_files if 'updated' in f.name]
-        refreshed_files = [f for f in unit_files if 'refreshed' in f.name and 'updated' not in f.name]
-        dedup_files = [f for f in unit_files if 'dedup' in f.name and 'refreshed' not in f.name and 'updated' not in f.name]
-        regular_files = [f for f in unit_files if 'dedup' not in f.name and 'refreshed' not in f.name and 'updated' not in f.name]
-        
+        # Prioritize files by completeness and freshness: updated > refreshed > dedup > regular
+        # Exclude fallback and temporary files that may be corrupted
+        valid_files = [f for f in unit_files if not any(exclude in f.name.lower() for exclude in ['fallback', 'temp', 'tmp'])]
+
+        updated_files = [f for f in valid_files if 'updated' in f.name]
+        # Prefer stable masters first: dedup > regular; treat 'refreshed' as lowest priority
+        dedup_files = [f for f in valid_files if 'dedup' in f.name and 'refreshed' not in f.name and 'updated' not in f.name]
+        regular_files = [f for f in valid_files if 'dedup' not in f.name and 'refreshed' not in f.name and 'updated' not in f.name]
+        refreshed_files = [f for f in valid_files if 'refreshed' in f.name and 'updated' not in f.name]
+
+        # If a span preference is set (e.g., '1p5y'), prefer matching files
+        span_pref = os.getenv('PREFERRED_SPAN', '1p5y').strip().lower()
+        def _prefer_span(files: list[Path]) -> list[Path]:
+            if not span_pref:
+                return files
+            try:
+                return sorted(
+                    files,
+                    key=lambda p: (span_pref in p.name.lower(), p.stat().st_mtime),
+                    reverse=True,
+                )
+            except Exception:
+                return files
+        dedup_files = _prefer_span(dedup_files)
+        regular_files = _prefer_span(regular_files)
+        updated_files = _prefer_span(updated_files)
+
         target_file = None
         if updated_files:
             # Use newest updated file (highest priority - historical + fresh data combined)
-            target_file = max(updated_files, key=lambda x: x.stat().st_mtime)
+            target_file = updated_files[0]
+        elif dedup_files:
+            # Prefer dedup files (cleaned, reliable data)
+            target_file = dedup_files[0]
+        elif regular_files:
+            # Use regular files as next option
+            target_file = regular_files[0]
         elif refreshed_files:
-            # Use newest refreshed file (fresh PI data only)
-            target_file = max(refreshed_files, key=lambda x: x.stat().st_mtime)
-        else:
-            # Choose the newest between regular and dedup files (prefer fresh data)
-            all_candidates = regular_files + dedup_files
-            if all_candidates:
-                target_file = max(all_candidates, key=lambda x: x.stat().st_mtime)
+            # Only use refreshed files if nothing else exists (may lack 'tag' column)
+            target_file = refreshed_files[0]
         
         if not target_file:
             return pd.DataFrame()
@@ -371,25 +422,100 @@ class ParquetDatabase:
     
     def get_latest_timestamp(self, unit: str, tag: str = None) -> Optional[datetime]:
         """Get latest timestamp for a unit/tag combination.
-        
+
         Args:
             unit: Unit identifier
             tag: Optional tag filter
-            
+
         Returns:
             Latest timestamp or None
         """
         df = self.get_unit_data(unit)
         if df.empty:
             return None
-        
+
         if tag and 'tag' in df.columns:
             df = df[df['tag'] == tag]
-        
+
         if 'time' in df.columns and not df.empty:
             return df['time'].max()
-        
+
         return None
+
+    def check_tag_freshness(self, unit: str, max_age_hours: float = 1.0) -> tuple[bool, int, int]:
+        """Check if at least 50% of tags have fresh data (< max_age_hours old).
+
+        This prevents false positives where only 1-2 tags are fresh but others are stale.
+
+        Args:
+            unit: Unit identifier
+            max_age_hours: Maximum age in hours before considering stale
+
+        Returns:
+            (is_fresh, fresh_tag_count, total_tag_count)
+            is_fresh = True if >= 50% of tags have data within max_age_hours
+        """
+        df = self.get_unit_data(unit)
+        if df.empty:
+            return (False, 0, 0)
+
+        # Ensure time column exists
+        if 'time' not in df.columns:
+            return (False, 0, 0)
+
+        # Must have tag column for per-tag validation
+        if 'tag' not in df.columns:
+            # Wide format or single tag - fall back to overall timestamp check
+            latest = df['time'].max()
+            age = datetime.now() - latest
+            is_fresh = age < timedelta(hours=max_age_hours)
+            return (is_fresh, 1 if is_fresh else 0, 1)
+
+        # Filter out None/null tags
+        df_with_tags = df[df['tag'].notna()]
+
+        if len(df_with_tags) == 0:
+            # No valid tags - fall back to overall timestamp check
+            latest = df['time'].max()
+            age = datetime.now() - latest
+            is_fresh = age < timedelta(hours=max_age_hours)
+            return (is_fresh, 1 if is_fresh else 0, 1)
+
+        # Get latest timestamp per tag
+        cutoff_time = datetime.now() - timedelta(hours=max_age_hours)
+        tag_latest = df_with_tags.groupby('tag')['time'].max()
+
+        # Count how many tags are fresh
+        fresh_tags = (tag_latest > cutoff_time).sum()
+        total_tags = len(tag_latest)
+
+        # Require at least 50% of tags to be fresh
+        freshness_threshold = 0.5
+        is_fresh = (fresh_tags / total_tags) >= freshness_threshold if total_tags > 0 else False
+
+        return (is_fresh, int(fresh_tags), int(total_tags))
+
+    def get_tag_latest_timestamps(self, unit: str) -> Dict[str, datetime]:
+        """Get latest timestamp for EACH tag in a unit.
+
+        Args:
+            unit: Unit identifier
+
+        Returns:
+            Dictionary mapping tag name to latest timestamp
+        """
+        df = self.get_unit_data(unit)
+        if df.empty or 'tag' not in df.columns or 'time' not in df.columns:
+            return {}
+
+        # Filter out None/null tags
+        df_with_tags = df[df['tag'].notna()]
+        if len(df_with_tags) == 0:
+            return {}
+
+        # Get latest timestamp per tag
+        tag_latest = df_with_tags.groupby('tag')['time'].max()
+        return tag_latest.to_dict()
     
     def get_data_freshness_info(self, unit: str, tag: str = None) -> Dict[str, Any]:
         """Get data freshness information for a unit/tag.
@@ -401,8 +527,166 @@ class ParquetDatabase:
         Returns:
             Dictionary with freshness information
         """
+        # Fast path: try to compute aggregates directly in DuckDB to avoid
+        # materialising tens of millions of rows into memory (can OOM on ABF).
+        if self.conn is not None:
+            try:
+                # Use a broad parquet glob so we consider the newest file for a
+                # unit even when *.dedup.parquet has not been regenerated yet
+                # (e.g., when dedup is deferred or failed on a large file).
+                # Avoid double-counting when both master and *.dedup.parquet exist
+                # by counting DISTINCT (time, tag) pairs for the unit.
+                #
+                # IMPORTANT: When multiple files exist for same unit (e.g., different lookback periods),
+                # we want the MOST RECENT data (MAX timestamp), which should come from the actively
+                # refreshed file. The WHERE unit = ? filter ensures we only scan the target unit.
+                # If DuckDB returns stale data, it means an old file with same unit exists.
+                # Solution: Read from specific file pattern or sort by file mtime.
+
+                # Get all parquet files and find the most recently modified one for this unit
+                import glob as _glob
+                from pathlib import Path as _Path
+                import os as _os_path
+                from datetime import datetime as _datetime
+
+                parquet_pattern = str(self.processed_dir / "*.parquet")
+                all_files = _glob.glob(parquet_pattern)
+
+                # Find files matching this unit (by filename convention: {unit}_*)
+                # Match patterns: C-02001_*, \\C-02001_*, /C-02001_*
+                unit_files = []
+                for f in all_files:
+                    filename = _os_path.basename(f)
+                    # Check if filename starts with unit prefix
+                    if filename.startswith(f"{unit}_"):
+                        unit_files.append(f)
+
+                # DEBUG: Print file selection for problematic units
+                if unit == 'C-02001':
+                    print(f"\n[DEBUG] C-02001 file search:")
+                    print(f"  Pattern: {parquet_pattern}")
+                    print(f"  Total files found: {len(all_files)}")
+                    print(f"  Unit-specific files found: {len(unit_files)}")
+                    if unit_files:
+                        for f in unit_files[:5]:  # Show first 5
+                            mtime = _datetime.fromtimestamp(_os_path.getmtime(f))
+                            print(f"    - {_os_path.basename(f)}")
+                            print(f"      mtime: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+
+                if not unit_files:
+                    # Fallback: use broad glob
+                    logger.debug(f"No specific files found for {unit}, using broad glob")
+                    q = (
+                        f"WITH src AS (SELECT time, tag FROM read_parquet('{self._parquet_glob(False)}') WHERE unit = ?) "
+                        "SELECT (SELECT COUNT(*) FROM (SELECT DISTINCT time, tag FROM src) t) AS total, "
+                        "       MIN(time) AS earliest, MAX(time) AS latest, "
+                        "       COUNT(DISTINCT tag) AS uniq "
+                        "FROM src"
+                    )
+                    total, earliest, latest, uniq = self.conn.execute(q, [unit]).fetchone()
+                else:
+                    # Read only from the most recently modified file for this unit
+                    # Prefer .dedup.parquet over master .parquet
+                    dedup_files = [f for f in unit_files if f.endswith('.dedup.parquet')]
+                    if dedup_files:
+                        unit_files_with_mtime = [(f, _os_path.getmtime(f)) for f in dedup_files]
+                    else:
+                        unit_files_with_mtime = [(f, _os_path.getmtime(f)) for f in unit_files]
+
+                    latest_file = max(unit_files_with_mtime, key=lambda x: x[1])[0]
+
+                    # DEBUG: Show selected file for C-02001
+                    if unit == 'C-02001':
+                        selected_mtime = _datetime.fromtimestamp(_os_path.getmtime(latest_file))
+                        print(f"  SELECTED FILE: {_os_path.basename(latest_file)}")
+                        print(f"    mtime: {selected_mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+                        print(f"    Reading data...")
+
+                    q = (
+                        f"WITH src AS (SELECT time, tag FROM read_parquet('{latest_file}') WHERE unit = ?) "
+                        "SELECT (SELECT COUNT(*) FROM (SELECT DISTINCT time, tag FROM src) t) AS total, "
+                        "       MIN(time) AS earliest, MAX(time) AS latest, "
+                        "       COUNT(DISTINCT tag) AS uniq "
+                        "FROM src"
+                    )
+                    total, earliest, latest, uniq = self.conn.execute(q, [unit]).fetchone()
+
+                    # DEBUG: Show query result for C-02001
+                    if unit == 'C-02001' and latest:
+                        import pandas as _pd
+                        latest_dt = _pd.to_datetime(latest)
+                        age_hours = (_datetime.now() - latest_dt).total_seconds() / 3600
+                        print(f"  QUERY RESULT:")
+                        print(f"    Latest timestamp: {latest_dt}")
+                        print(f"    Age: {age_hours:.1f}h")
+                        print(f"    Records: {total:,}\n")
+                # Prepare base structure
+                info = {
+                    'unit': unit,
+                    'tag': tag,
+                    'total_records': int(total or 0),
+                    'latest_timestamp': latest,
+                    'earliest_timestamp': earliest,
+                    'data_age_hours': None,
+                    'is_stale': True,
+                    'unique_tags': [],
+                    'date_range_days': None,
+                }
+                # Attach unique tag count as list only if needed elsewhere
+                try:
+                    info['unique_tags'] = [None] * int(uniq or 0)
+                except Exception:
+                    info['unique_tags'] = []
+                # Age maths
+                if latest is not None:
+                    try:
+                        import pandas as _pd
+                        latest_dt = _pd.to_datetime(latest)
+                        now_utc = _pd.Timestamp.now(tz='UTC')
+                        if getattr(latest_dt, 'tz', None) is None:
+                            # treat as local -> convert to UTC for age math
+                            latest_dt = latest_dt.tz_localize(_pd.Timestamp.now().tz).tz_convert('UTC')
+                        age_h = (now_utc - latest_dt.tz_convert('UTC')).total_seconds() / 3600
+                        info['data_age_hours'] = age_h
+                    except Exception:
+                        pass
+                # Date range days
+                if info.get('earliest_timestamp') and info.get('latest_timestamp'):
+                    try:
+                        import pandas as _pd
+                        e = _pd.to_datetime(info['earliest_timestamp'])
+                        l = _pd.to_datetime(info['latest_timestamp'])
+                        info['date_range_days'] = (l - e).total_seconds() / (24 * 3600)
+                    except Exception:
+                        pass
+                # NEW: Use per-tag freshness validation instead of just overall latest timestamp
+                try:
+                    max_age_env = float(os.getenv('MAX_AGE_HOURS', '1.0'))
+                except Exception:
+                    max_age_env = 1.0
+
+                # Check if at least 50% of tags are fresh (prevents false positives)
+                try:
+                    is_fresh, fresh_count, total_count = self.check_tag_freshness(unit, max_age_hours=max_age_env)
+                    info['is_stale'] = not is_fresh  # Stale if NOT fresh
+                    info['fresh_tag_count'] = fresh_count
+                    info['total_tag_count'] = total_count
+                except Exception as e:
+                    # Fallback to old behavior if per-tag check fails
+                    logger.debug(f"Per-tag freshness check failed for {unit}, using overall timestamp: {e}")
+                    info['is_stale'] = (info.get('data_age_hours') is not None) and (info['data_age_hours'] > max_age_env)
+                    info['fresh_tag_count'] = None
+                    info['total_tag_count'] = None
+                # If user requested a specific tag, fall back to full load to compute tag-specific metrics only
+                if tag is None:
+                    return info
+            except Exception:
+                # Fall back to the generic path below
+                pass
+
+        # Generic path: materialise unit rows (slower and memory heavy, keep for compatibility)
         df = self.get_unit_data(unit)
-        
+
         info = {
             'unit': unit,
             'tag': tag,
@@ -626,10 +910,22 @@ class ParquetDatabase:
         summary = summary.reset_index()
         
         # Calculate data age for each tag
-        now = datetime.now()
-        summary['hours_since_last'] = summary['time_max'].apply(
-            lambda x: (now - x).total_seconds() / 3600 if pd.notna(x) else None
-        )
+        # Ensure datetime arithmetic is safe (handle tz-aware vs naive)
+        now_local = datetime.now().astimezone()
+        try:
+            # Normalize to local naive timestamps for subtraction
+            tmax = pd.to_datetime(summary['time_max'], errors='coerce')
+            if getattr(getattr(tmax, 'dt', None), 'tz', None) is not None:
+                tmax = tmax.dt.tz_convert(now_local.tzinfo).dt.tz_localize(None)
+            summary['hours_since_last'] = tmax.apply(
+                lambda x: (now_local.replace(tzinfo=None) - x).total_seconds() / 3600 if pd.notna(x) else None
+            )
+        except Exception:
+            # Fallback without tz handling
+            now = datetime.now()
+            summary['hours_since_last'] = summary['time_max'].apply(
+                lambda x: (now - x).total_seconds() / 3600 if pd.notna(x) else None
+            )
         
         return summary
     

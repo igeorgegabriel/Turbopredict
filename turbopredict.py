@@ -724,51 +724,53 @@ $s.Save()
                     print("\n>>> STEP 1/2: AUTO-REFRESH SCAN <<<")
 
                 try:
-                    # Use scanner's refresh method directly (same as Option [1] when working)
-                    # This bypasses the complex prompt logic and uses the fast batch method
-                    from pathlib import Path
+                    # Call the EXACT SAME script that Option [1] uses
+                    # Per FETCHING.md and FETCH_TROUBLESHOOTING.md documentation
+                    import subprocess
 
-                    # Disable Web API for Option [3] - use Excel only for reliability
+                    # Disable Web API for Option [3] - use Excel only per FETCHING.md
                     original_webapi_url = os.environ.get('PI_WEBAPI_URL', '')
-                    os.environ['PI_WEBAPI_URL'] = ''  # Force Excel-only method
+                    os.environ['PI_WEBAPI_URL'] = ''  # Force Excel-only as per docs
 
-                    # Find Excel file
-                    project_root = Path(__file__).parent
-                    excel_candidates = [
-                        project_root / "excel" / "PCFS_Automation.xlsx",
-                        project_root / "excel" / "PCMSB_Automation.xlsx",
-                        project_root / "excel" / "ABF_Automation.xlsx",
-                    ]
-                    excel_file = next((p for p in excel_candidates if p.exists()), None)
+                    if COLORAMA_AVAILABLE:
+                        print(Fore.YELLOW + "  [Mode] Using smart_incremental_refresh.py (same as Option [1])" + Style.RESET_ALL)
+                    else:
+                        print("  [Mode] Using smart_incremental_refresh.py (same as Option [1])")
 
-                    if excel_file:
-                        # Call scanner refresh directly with 1 hour max age (Excel-only mode)
-                        max_age_hours = float(os.getenv('MAX_AGE_HOURS', '1.0'))
+                    # Run the same script that Option [1] uses
+                    result = subprocess.run(
+                        [sys.executable, "scripts/smart_incremental_refresh.py"],
+                        capture_output=False,  # Show output directly
+                        text=True,
+                        timeout=1800  # 30 minute timeout
+                    )
 
-                        if COLORAMA_AVAILABLE:
-                            print(Fore.YELLOW + "  [Mode] Excel-only refresh (Web API disabled)" + Style.RESET_ALL)
-                        else:
-                            print("  [Mode] Excel-only refresh (Web API disabled)")
+                    # Restore Web API URL
+                    os.environ['PI_WEBAPI_URL'] = original_webapi_url
 
-                        results = self.scanner.refresh_stale_units_with_progress(
-                            xlsx_path=excel_file,
-                            max_age_hours=max_age_hours
-                        )
-
-                        # Restore Web API URL for other operations
-                        os.environ['PI_WEBAPI_URL'] = original_webapi_url
-
+                    if result.returncode == 0:
                         # Reload database after refresh
                         self._reload_database()
 
                         if COLORAMA_AVAILABLE:
-                            print(Fore.GREEN + f">>> Refresh complete: {results.get('units_processed', 0)} units processed <<<" + Style.RESET_ALL)
+                            print(Fore.GREEN + ">>> Refresh complete <<<" + Style.RESET_ALL)
                         else:
-                            print(f">>> Refresh complete: {results.get('units_processed', 0)} units processed <<<")
+                            print(">>> Refresh complete <<<")
                     else:
-                        # Restore Web API URL even if Excel file not found
+                        if COLORAMA_AVAILABLE:
+                            print(Fore.YELLOW + f">>> Refresh completed with warnings (exit code: {result.returncode}) <<<" + Style.RESET_ALL)
+                        else:
+                            print(f">>> Refresh completed with warnings (exit code: {result.returncode}) <<<")
+
+                except subprocess.TimeoutExpired:
+                    # Restore Web API URL
+                    if 'original_webapi_url' in locals():
                         os.environ['PI_WEBAPI_URL'] = original_webapi_url
-                        print("[SKIP] No Excel file found for refresh")
+
+                    if COLORAMA_AVAILABLE:
+                        print(Fore.RED + "[ERROR] Refresh timed out after 30 minutes" + Style.RESET_ALL)
+                    else:
+                        print("[ERROR] Refresh timed out after 30 minutes")
 
                 except Exception as e:
                     # Restore Web API URL even on error

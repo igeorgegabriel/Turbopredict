@@ -717,20 +717,50 @@ $s.Save()
                     print(f"     CYCLE #{cycle_count} - {cycle_start.strftime('%Y-%m-%d %H:%M:%S')}")
                     print("=" * 80)
 
-                # Step 1: Run Option [1] - Auto-Refresh Scan
+                # Step 1: Run Auto-Refresh (bypass prompts, use scanner directly)
                 if COLORAMA_AVAILABLE:
                     print(Fore.CYAN + "\n>>> STEP 1/2: AUTO-REFRESH SCAN <<<" + Style.RESET_ALL)
                 else:
                     print("\n>>> STEP 1/2: AUTO-REFRESH SCAN <<<")
 
                 try:
-                    self.run_real_data_scanner(auto_refresh=True)
+                    # Use scanner's refresh method directly (same as Option [1] when working)
+                    # This bypasses the complex prompt logic and uses the fast batch method
+                    from pathlib import Path
+
+                    # Find Excel file
+                    project_root = Path(__file__).parent
+                    excel_candidates = [
+                        project_root / "excel" / "PCFS_Automation.xlsx",
+                        project_root / "excel" / "PCMSB_Automation.xlsx",
+                        project_root / "excel" / "ABF_Automation.xlsx",
+                    ]
+                    excel_file = next((p for p in excel_candidates if p.exists()), None)
+
+                    if excel_file:
+                        # Call scanner refresh directly with 1 hour max age
+                        max_age_hours = float(os.getenv('MAX_AGE_HOURS', '1.0'))
+                        results = self.scanner.refresh_stale_units_with_progress(
+                            xlsx_path=excel_file,
+                            max_age_hours=max_age_hours
+                        )
+
+                        # Reload database after refresh
+                        self._reload_database()
+
+                        if COLORAMA_AVAILABLE:
+                            print(Fore.GREEN + f">>> Refresh complete: {results.get('units_processed', 0)} units processed <<<" + Style.RESET_ALL)
+                        else:
+                            print(f">>> Refresh complete: {results.get('units_processed', 0)} units processed <<<")
+                    else:
+                        print("[SKIP] No Excel file found for refresh")
+
                 except Exception as e:
                     if COLORAMA_AVAILABLE:
-                        print(Fore.RED + f"[ERROR] Option [1] failed: {e}" + Style.RESET_ALL)
+                        print(Fore.RED + f"[ERROR] Auto-refresh failed: {e}" + Style.RESET_ALL)
                     else:
-                        print(f"[ERROR] Option [1] failed: {e}")
-                    logger.exception("Option [1] failed in continuous loop")
+                        print(f"[ERROR] Auto-refresh failed: {e}")
+                    logger.exception("Auto-refresh failed in continuous loop")
 
                 # Step 2: Run Option [2] - Unit Deep Analysis
                 if COLORAMA_AVAILABLE:

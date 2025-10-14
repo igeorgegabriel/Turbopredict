@@ -728,6 +728,10 @@ $s.Save()
                     # This bypasses the complex prompt logic and uses the fast batch method
                     from pathlib import Path
 
+                    # Disable Web API for Option [3] - use Excel only for reliability
+                    original_webapi_url = os.environ.get('PI_WEBAPI_URL', '')
+                    os.environ['PI_WEBAPI_URL'] = ''  # Force Excel-only method
+
                     # Find Excel file
                     project_root = Path(__file__).parent
                     excel_candidates = [
@@ -738,12 +742,21 @@ $s.Save()
                     excel_file = next((p for p in excel_candidates if p.exists()), None)
 
                     if excel_file:
-                        # Call scanner refresh directly with 1 hour max age
+                        # Call scanner refresh directly with 1 hour max age (Excel-only mode)
                         max_age_hours = float(os.getenv('MAX_AGE_HOURS', '1.0'))
+
+                        if COLORAMA_AVAILABLE:
+                            print(Fore.YELLOW + "  [Mode] Excel-only refresh (Web API disabled)" + Style.RESET_ALL)
+                        else:
+                            print("  [Mode] Excel-only refresh (Web API disabled)")
+
                         results = self.scanner.refresh_stale_units_with_progress(
                             xlsx_path=excel_file,
                             max_age_hours=max_age_hours
                         )
+
+                        # Restore Web API URL for other operations
+                        os.environ['PI_WEBAPI_URL'] = original_webapi_url
 
                         # Reload database after refresh
                         self._reload_database()
@@ -753,9 +766,15 @@ $s.Save()
                         else:
                             print(f">>> Refresh complete: {results.get('units_processed', 0)} units processed <<<")
                     else:
+                        # Restore Web API URL even if Excel file not found
+                        os.environ['PI_WEBAPI_URL'] = original_webapi_url
                         print("[SKIP] No Excel file found for refresh")
 
                 except Exception as e:
+                    # Restore Web API URL even on error
+                    if 'original_webapi_url' in locals():
+                        os.environ['PI_WEBAPI_URL'] = original_webapi_url
+
                     if COLORAMA_AVAILABLE:
                         print(Fore.RED + f"[ERROR] Auto-refresh failed: {e}" + Style.RESET_ALL)
                     else:

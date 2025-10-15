@@ -138,6 +138,19 @@ class AnomalyTriggeredPlotter:
                     logger.info(f"Consolidated PDF report generated: {pdf_path}")
                     print(f"\n[PDF] Consolidated anomaly report: {pdf_path}")
                     print(f"[TIMING] PDF generation: {pdf_time:.2f}s")
+
+                    # Send PDF via email
+                    try:
+                        from .email_sender import send_pdf_report
+                        print(f"\n[EMAIL] Sending PDF report to george.gabrielujai@petronas.com.my...")
+                        email_sent = send_pdf_report(pdf_path)
+                        if email_sent:
+                            print(f"[EMAIL] ✓ Report sent successfully!")
+                        else:
+                            print(f"[EMAIL] ✗ Failed to send email - check logs")
+                    except Exception as email_err:
+                        logger.warning(f"Failed to send email: {email_err}")
+                        print(f"[EMAIL] ✗ Email sending failed: {email_err}")
                 else:
                     logger.warning("PDF generation returned None")
                     print(f"\n[WARNING] PDF generation failed - check logs")

@@ -42,12 +42,19 @@ def send_pdf_report(
     """
     try:
         # Default SMTP settings for PETRONAS internal mail
+        # If SMTP_SERVER env var not set, email will be skipped (DNS error)
         if smtp_server is None:
-            smtp_server = os.getenv('SMTP_SERVER', 'mail.petronas.com.my')
+            smtp_server = os.getenv('SMTP_SERVER', None)
         if smtp_port is None:
             smtp_port = int(os.getenv('SMTP_PORT', '25'))
         if sender_email is None:
             sender_email = os.getenv('SENDER_EMAIL', 'turbopredict@petronas.com.my')
+
+        # Skip email if no SMTP server configured
+        if smtp_server is None:
+            logger.warning("No SMTP server configured - skipping email")
+            print("[EMAIL] Skipped - Set SMTP_SERVER environment variable to enable email")
+            return False
 
         # Verify PDF exists
         if not pdf_path.exists():

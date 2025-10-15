@@ -738,11 +738,12 @@ $s.Save()
                         print("  [Mode] Using smart_incremental_refresh.py (same as Option [1])")
 
                     # Run the same script that Option [1] uses
+                    # Timeout set to 2 hours for all 13-14 units
                     result = subprocess.run(
                         [sys.executable, "scripts/smart_incremental_refresh.py"],
                         capture_output=False,  # Show output directly
                         text=True,
-                        timeout=1800  # 30 minute timeout
+                        timeout=7200  # 2 hour timeout (120 minutes)
                     )
 
                     # Restore Web API URL
@@ -768,9 +769,11 @@ $s.Save()
                         os.environ['PI_WEBAPI_URL'] = original_webapi_url
 
                     if COLORAMA_AVAILABLE:
-                        print(Fore.RED + "[ERROR] Refresh timed out after 30 minutes" + Style.RESET_ALL)
+                        print(Fore.YELLOW + "[WARNING] Refresh timed out after 2 hours - continuing to next cycle" + Style.RESET_ALL)
                     else:
-                        print("[ERROR] Refresh timed out after 30 minutes")
+                        print("[WARNING] Refresh timed out after 2 hours - continuing to next cycle")
+
+                    # Continue to next cycle instead of crashing
 
                 except Exception as e:
                     # Restore Web API URL even on error

@@ -40,9 +40,9 @@ def check_if_stale(unit: str, plant: str, max_age_hours: float = 1.0) -> tuple[b
 
     age = datetime.now() - latest_time.replace(tzinfo=None)
 
-    # NEW: Use per-tag freshness check instead of just overall latest timestamp
-    is_fresh, fresh_tag_count, total_tag_count = check_tag_freshness(parquet_file, max_age_hours=max_age_hours)
-    is_stale = not is_fresh  # Stale if NOT fresh (i.e., < 50% tags are fresh)
+    # Check if unit is stale based on overall latest timestamp
+    # Use simple age-based check: data > max_age_hours is stale
+    is_stale = age.total_seconds() / 3600 > max_age_hours
 
     # Count tags (check partitioned dataset first, then flat file)
     total_tags, active_tags = count_tags_in_parquet(parquet_file, unit=unit, plant=plant)

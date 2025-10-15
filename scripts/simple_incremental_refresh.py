@@ -6,6 +6,10 @@ from datetime import datetime, timedelta
 import xlwings as xw
 import time
 import subprocess
+import warnings
+
+# Suppress pandas nanosecond precision warnings (expected when converting parquet to datetime)
+warnings.filterwarnings('ignore', message='.*nanosecond.*')
 
 PROJECT_ROOT = Path(__file__).parent.parent
 

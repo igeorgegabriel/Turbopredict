@@ -542,104 +542,135 @@ def simple_refresh_unit(unit: str, plant: str) -> dict:
         if sht is None:
             raise RuntimeError("Could not access DL_WORK sheet after retries")
 
-        # Loop through ALL tags
-        for tag_idx, tag in enumerate(unit_tags, 1):
-            print(f"\n[{tag_idx}/{len(unit_tags)}] Fetching: {tag}")
+        # BATCH PROCESSING: Fetch 3 tags at a time for performance
+        BATCH_SIZE = 3
+        num_batches = (len(unit_tags) + BATCH_SIZE - 1) // BATCH_SIZE
 
-            # Clear worksheet
+        print(f"\n[BATCH MODE] Processing {len(unit_tags)} tags in batches of {BATCH_SIZE}")
+        print(f"[BATCH MODE] Total batches: {num_batches}")
+
+        for batch_num in range(num_batches):
+            # Get tags for this batch
+            start_idx = batch_num * BATCH_SIZE
+            end_idx = min(start_idx + BATCH_SIZE, len(unit_tags))
+            batch_tags = unit_tags[start_idx:end_idx]
+
+            print(f"\n{'='*80}")
+            print(f"BATCH [{batch_num+1}/{num_batches}] - Tags {start_idx+1} to {end_idx} of {len(unit_tags)}")
+            print(f"{'='*80}")
+            for i, tag in enumerate(batch_tags, 1):
+                print(f"  [{i}] {tag}")
+
+            # Clear worksheet (all columns we'll use)
             try:
-                sht.range("A2:B100000").clear_contents()
+                # Clear up to 6 columns (3 tags × 2 columns each)
+                sht.range("A2:F100000").clear_contents()
             except:
                 pass
             time.sleep(1)
 
-            # Set formulas for this tag
-            formula_time = f'=PISampDat("{tag}","{start_time}","*","-0.1h",1,"{server}")'
-            formula_value = f'=PISampDat("{tag}","{start_time}","*","-0.1h",0,"{server}")'
+            # Estimate rows: 6-minute step -> 10 rows/hour approx (60/6)
+            est_rows = int(max(1, min(87600, (hours_to_fetch * 10) + 20)))
+            end_row = 1 + 1 + est_rows  # header row at 1, data starts at A2
 
-            # Prefer array formulas over a pre-sized range (works even without dynamic arrays).
-            # Fallback to formula2 (dynamic spill) and finally to single-cell formula if needed.
-            try:
-                # Estimate rows: 6-minute step -> 10 rows/hour approx (60/6)
-                est_rows = int(max(1, min(87600, (hours_to_fetch * 10) + 20)))
-                end_row = 1 + 1 + est_rows  # header row at 1, data starts at A2 -> row index end
-                sht.range(f"A2:A{end_row}").formula_array = formula_time
-                sht.range(f"B2:B{end_row}").formula_array = formula_value
-            except Exception:
+            # Set formulas for all tags in this batch
+            for i, tag in enumerate(batch_tags):
+                col_offset = i * 2  # Each tag uses 2 columns (time + value)
+                col_time = chr(65 + col_offset)  # A, C, E
+                col_value = chr(65 + col_offset + 1)  # B, D, F
+
+                formula_time = f'=PISampDat("{tag}","{start_time}","*","-0.1h",1,"{server}")'
+                formula_value = f'=PISampDat("{tag}","{start_time}","*","-0.1h",0,"{server}")'
+
+                # Use array formulas
                 try:
-                    # Try dynamic arrays (formula2) if available
-                    sht.range("A2").formula2 = formula_time
-                    sht.range("B2").formula2 = formula_value
+                    sht.range(f"{col_time}2:{col_time}{end_row}").formula_array = formula_time
+                    sht.range(f"{col_value}2:{col_value}{end_row}").formula_array = formula_value
                 except Exception:
-                    # Last resort: single-cell formulas (may require FillDown by user)
-                    sht.range("A2").formula = formula_time
-                    sht.range("B2").formula = formula_value
+                    try:
+                        # Fallback to formula2 (dynamic spill)
+                        sht.range(f"{col_time}2").formula2 = formula_time
+                        sht.range(f"{col_value}2").formula2 = formula_value
+                    except Exception:
+                        # Last resort: single-cell formulas
+                        sht.range(f"{col_time}2").formula = formula_time
+                        sht.range(f"{col_value}2").formula = formula_value
 
-            # Save and refresh
+            print(f"[BATCH] Formulas written for {len(batch_tags)} tags, saving and refreshing...")
+
+            # Save and refresh ONCE for all tags in batch
             wb.save()
             time.sleep(1)
             wb.api.RefreshAll()
 
-            # Wait for refresh
+            # Wait for refresh to complete
+            print(f"[BATCH] Waiting for PI DataLink refresh...")
             time.sleep(5)
             app.api.CalculateUntilAsyncQueriesDone()
             time.sleep(2)
 
-            # Read data for this tag
-            data = sht.range("A2:B87602").value
+            # Process each tag in the batch
+            for i, tag in enumerate(batch_tags):
+                tag_idx = start_idx + i + 1
+                col_offset = i * 2
+                col_time = chr(65 + col_offset)  # A, C, E
+                col_value = chr(65 + col_offset + 1)  # B, D, F
 
-            # Convert to rows
-            rows = []
-            for row in data:
-                if row[0] is not None and row[1] is not None:
-                    if not isinstance(row[0], str) and not isinstance(row[1], str):
-                        rows.append((row[0], row[1]))
+                print(f"\n[{tag_idx}/{len(unit_tags)}] Processing: {tag}")
 
-            if not rows:
-                print(f"  [!] No data for tag: {tag}")
-                continue
+                # Read data for this tag
+                data = sht.range(f"{col_time}2:{col_value}87602").value
 
-            tags_with_any_rows += 1
+                # Convert to rows
+                rows = []
+                for row in data:
+                    if row[0] is not None and row[1] is not None:
+                        if not isinstance(row[0], str) and not isinstance(row[1], str):
+                            rows.append((row[0], row[1]))
 
-            # Create dataframe
-            df = pd.DataFrame(rows, columns=['time', 'value'])
+                if not rows:
+                    print(f"  [!] No data for tag: {tag}")
+                    continue
 
-            # Convert timestamps
-            if df['time'].dtype == 'float64':
-                df['time'] = pd.to_datetime(df['time'], unit='D', origin='1899-12-30', errors='coerce')
-            else:
-                df['time'] = pd.to_datetime(df['time'], errors='coerce')
+                tags_with_any_rows += 1
 
-            df = df.dropna(subset=['time'])
+                # Create dataframe
+                df = pd.DataFrame(rows, columns=['time', 'value'])
 
-            if df.empty:
-                print(f"  [!] Empty after time parsing")
-                continue
+                # Convert timestamps
+                if df['time'].dtype == 'float64':
+                    df['time'] = pd.to_datetime(df['time'], unit='D', origin='1899-12-30', errors='coerce')
+                else:
+                    df['time'] = pd.to_datetime(df['time'], errors='coerce')
 
-            # NEW: Filter to only new data using THIS TAG's latest timestamp
-            tag_slug = _slug(tag)
-            # Use per-tag timestamp if available, otherwise use oldest_tag_time
-            # (not latest_time, which might include legacy None-tag data)
-            tag_latest = tag_latest_times.get(tag_slug, oldest_tag_time)
+                df = df.dropna(subset=['time'])
 
-            df_new = df[df['time'] > tag_latest]
+                if df.empty:
+                    print(f"  [!] Empty after time parsing")
+                    continue
 
-            if df_new.empty:
-                print(f"  [i] No new data (all <= {tag_latest})")
-                continue
+                # Filter to only new data using THIS TAG's latest timestamp
+                tag_slug = _slug(tag)
+                tag_latest = tag_latest_times.get(tag_slug, oldest_tag_time)
 
-            tags_with_new_data += 1
+                df_new = df[df['time'] > tag_latest]
 
-            # Add metadata (avoid SettingWithCopyWarning)
-            df_new = df_new.copy()
-            df_new.loc[:, 'plant'] = plant
-            df_new.loc[:, 'unit'] = unit
-            df_new.loc[:, 'tag'] = _slug(tag)
+                if df_new.empty:
+                    print(f"  [i] No new data (all <= {tag_latest})")
+                    continue
 
-            print(f"  [OK] {len(df_new)} new rows ({df_new['time'].min()} to {df_new['time'].max()})")
+                tags_with_new_data += 1
 
-            all_new_data.append(df_new)
-            total_rows_added += len(df_new)
+                # Add metadata (avoid SettingWithCopyWarning)
+                df_new = df_new.copy()
+                df_new.loc[:, 'plant'] = plant
+                df_new.loc[:, 'unit'] = unit
+                df_new.loc[:, 'tag'] = _slug(tag)
+
+                print(f"  [OK] {len(df_new)} new rows ({df_new['time'].min()} to {df_new['time'].max()})")
+
+                all_new_data.append(df_new)
+                total_rows_added += len(df_new)
 
         # Close Excel
         try:

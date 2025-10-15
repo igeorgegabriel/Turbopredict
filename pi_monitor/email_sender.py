@@ -25,36 +25,52 @@ def send_pdf_report(
     password: Optional[str] = None
 ) -> bool:
     """
-    Send PDF report via email.
+    Send PDF report via email using Office365 SMTP.
 
     Args:
         pdf_path: Path to PDF file
         recipient_email: Recipient email address
-        smtp_server: SMTP server (default: mail.petronas.com.my)
-        smtp_port: SMTP port (default: 25)
-        sender_email: Sender email (default: turbopredict@petronas.com.my)
-        use_auth: Whether to use SMTP authentication
-        username: SMTP username (if auth required)
-        password: SMTP password (if auth required)
+        smtp_server: SMTP server (default: smtp.office365.com)
+        smtp_port: SMTP port (default: 587 with STARTTLS)
+        sender_email: Sender email (default: george.gabrielujai@petronas.com.my)
+        use_auth: Whether to use SMTP authentication (auto-enabled for Office365)
+        username: SMTP username (defaults to sender_email)
+        password: SMTP password (required for Office365 - set SMTP_PASSWORD env var)
+
+    Environment Variables:
+        SMTP_SERVER: SMTP server address (default: smtp.office365.com)
+        SMTP_PORT: SMTP port (default: 587)
+        SMTP_USERNAME: Username for authentication (default: sender email)
+        SMTP_PASSWORD: Password for authentication (REQUIRED for Office365)
+        SENDER_EMAIL: Sender email address
 
     Returns:
         True if email sent successfully, False otherwise
     """
     try:
-        # Default SMTP settings for PETRONAS internal mail
-        # If SMTP_SERVER env var not set, email will be skipped (DNS error)
+        # Default SMTP settings - Office365 for PETRONAS email
         if smtp_server is None:
-            smtp_server = os.getenv('SMTP_SERVER', None)
+            smtp_server = os.getenv('SMTP_SERVER', 'smtp.office365.com')
         if smtp_port is None:
-            smtp_port = int(os.getenv('SMTP_PORT', '25'))
+            smtp_port = int(os.getenv('SMTP_PORT', '587'))  # 587 for STARTTLS
         if sender_email is None:
-            sender_email = os.getenv('SENDER_EMAIL', 'turbopredict@petronas.com.my')
+            sender_email = os.getenv('SENDER_EMAIL', 'george.gabrielujai@petronas.com.my')
 
-        # Skip email if no SMTP server configured
-        if smtp_server is None:
-            logger.warning("No SMTP server configured - skipping email")
-            print("[EMAIL] Skipped - Set SMTP_SERVER environment variable to enable email")
-            return False
+        # Office365 requires authentication
+        if 'office365' in smtp_server.lower():
+            use_auth = True
+            if username is None:
+                username = os.getenv('SMTP_USERNAME', sender_email)
+            if password is None:
+                password = os.getenv('SMTP_PASSWORD', None)
+
+            # Check if password is provided
+            if password is None:
+                logger.warning("Office365 SMTP requires authentication")
+                print("[EMAIL] Skipped - Office365 requires authentication")
+                print("[EMAIL] Set environment variable: SMTP_PASSWORD=your-email-password")
+                print("[EMAIL] Or use app-specific password from Microsoft account")
+                return False
 
         # Verify PDF exists
         if not pdf_path.exists():

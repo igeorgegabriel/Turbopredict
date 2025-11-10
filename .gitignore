@@ -84,6 +84,11 @@ excel/
 monitoring/
 test_reports/
 
+# AI Agent runtime files (models and logs are not committed)
+models/agents/*.pkl
+logs/agent_performance/*.jsonl
+data/agent_training/
+
 # Workspace and IDE files
 CodeX.code-workspace
 
@@ -93,3 +98,4 @@ CodeX.code-workspace
 
 # Backup files
 *.backup
+*.bak

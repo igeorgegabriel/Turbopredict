@@ -1,1 +1,0 @@
-{"timestamp": "2025-11-10T03:14:59.665261", "agent": "batch_optimizer", "event_type": "batch_calculation", "data": {"unit": "TEST-UNIT", "batch_size": 1000000, "total_records": 1000000, "columns": 50, "available_memory_gb": 4.0, "memory_factor": 2.0, "column_factor": 2.0, "source": "default"}}

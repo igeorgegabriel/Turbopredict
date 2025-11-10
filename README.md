@@ -2,20 +2,47 @@
 
 ## Overview
 
-**TURBOPREDICT X PROTEAN** is a unified, intelligent PI data monitoring system that combines:
-- 🎯 **Real Parquet data integration** with your existing database
+**TURBOPREDICT X PROTEAN** is a unified, intelligent industrial PI data monitoring and anomaly detection system that combines:
+- 🎯 **Real Parquet data integration** with multi-plant monitoring (13 industrial units across 3 plants)
 - 🎨 **Beautiful cyberpunk-themed interface** with ASCII art and colors
 - 🧠 **Intelligent auto-scan system** that only fetches when data is stale
 - ⚡ **High-performance analysis** of industrial time series data
+- 🔍 **Multi-layered anomaly detection** using statistical and ML algorithms
 - 🔄 **Unified entry point** for all functionality
+- 🐳 **Containerized deployment** for scalable 24/7 monitoring
+
+## 🏭 Monitored Industrial Units
+
+### **13 Units Across 3 Plants:**
+
+**PCFS Plant (4 units):**
+- K-12-01, K-16-01, K-19-01, K-31-01
+
+**PCMSB Plant (8 units):**
+- C-02001, C-104, C-13001, C-1301, C-1302, C-201, C-202, XT-07002
+
+**ABFSB Plant (2 units):**
+- 21-K002, 07-MT01-K001
+
+**Total Monitoring:** ~800K+ records, 1.9GB+ historical data, 56-156 tags per unit
 
 ## ✨ Key Features
 
 ### 🎯 **Intelligent Data Management**
-- **Auto-detects** your existing Parquet files (K-12-01, K-16-01, K-19-01, K-31-01)
-- **Smart caching** - only fetches from PI when local data is stale
+- **Auto-detects** all 13 industrial units across 3 plants
+- **Smart caching** - only fetches from PI when local data is stale (>1 hour)
+- **Batch processing** - fetches 10 tags simultaneously for 10x performance
 - **Real-time analysis** of 1.9GB+ of historical data
 - **DuckDB integration** for lightning-fast queries
+- **Auto-deduplication** - removes duplicate records automatically
+
+### 🔍 **Advanced Anomaly Detection**
+- **2.5-sigma threshold detection** - Primary statistical detection layer
+- **MTD verification** - Modified Thompson Tau for validation
+- **Isolation Forest** - ML-based anomaly detection
+- **Speed-aware detection** - Compensates for equipment speed changes
+- **State-aware analysis** - Differentiates running vs. shutdown states
+- **Hybrid approach** - Combines statistical and ML methods
 
 ### 🎨 **Beautiful Interface**
 - **Cyberpunk ASCII art** with full "TURBOPREDICT" banner
@@ -28,6 +55,7 @@
 - **Graceful degradation** - works even if some modules are missing
 - **Original CLI integration** - access legacy features
 - **System diagnostics** - health monitoring
+- **Docker containers** - 13 unit containers + orchestrator + monitoring
 
 ## 🚀 Quick Start
 
@@ -55,33 +83,58 @@ python -m pi_monitor.cli
 +================================================================+
 |         TURBOPREDICT X PROTEAN NEURAL COMMAND MATRIX          |
 +================================================================+
-| 1. REAL DATA SCANNER    - Scan all units in database         |
-| 2. UNIT DEEP ANALYSIS   - Analyze specific unit data         |
-| 3. DATABASE OVERVIEW    - Complete database status           |
-| 4. AUTO-SCAN SYSTEM     - Intelligent scanning system        |
-| 5. DATA QUALITY AUDIT   - Quality analysis reports           |
-| 6. UNIT EXPLORER        - Browse all available units         |
-| 7. ORIGINAL CLI         - Access original command interface   |
-| 8. SYSTEM DIAGNOSTICS   - System health check                |
-| 0. NEURAL DISCONNECT    - Exit system                        |
+| 1. SMART INCREMENTAL REFRESH - Auto-refresh only stale units |
+| 2. UNIT DEEP ANALYSIS        - Detailed unit analysis        |
+| 3. SCHEDULED TASK MANAGER    - Setup 24/7 background refresh |
+| 4. DATABASE OVERVIEW         - Complete database statistics  |
+| 5. DATA QUALITY AUDIT        - Quality analysis reports      |
+| 6. UNIT EXPLORER             - Browse all 13 units           |
+| 7. ORIGINAL CLI              - Legacy command interface      |
+| 8. SYSTEM DIAGNOSTICS        - Health checks and monitoring  |
+| 0. NEURAL DISCONNECT         - Exit system                   |
 +================================================================+
 ```
 
-## 📊 Your Data Integration
+### 🎯 Main Features Explained:
 
-The system automatically detects and works with your existing data:
+**1. Smart Incremental Refresh:**
+- Automatically detects which units have stale data (>1 hour old)
+- Only refreshes units that need it (saves time!)
+- Batch processing for maximum efficiency
+- Full progress tracking with color-coded status
+
+**2. Scheduled Task Manager:**
+- Setup automated hourly refresh (runs 24/7, even when locked)
+- Windows Task Scheduler integration
+- Unattended operation for continuous monitoring
+- Email notifications on completion
+
+## 📊 Data Integration
+
+The system automatically detects and works with data from all 13 industrial units:
 
 ```
-📁 data/processed/
-├── 🗃️ K-12-01_1y_0p1h.dedup.parquet    (45.8 MB, ~87k records)
-├── 🗃️ K-16-01_1y_0p1h.dedup.parquet    (102 MB, ~200k records)  
-├── 🗃️ K-19-01_1y_0p1h.dedup.parquet    (122 MB, ~240k records)
-├── 🗃️ K-31-01_1y_0p1h.dedup.parquet    (123 MB, ~250k records)
-├── 🚀 pi.duckdb                         (1.0 GB DuckDB database)
-└── 📊 Various analysis files...
+📁 data/
+├── 📁 raw/                              # Excel files with PI DataLink
+│   ├── Automation.xlsx                 # Main data source
+│   └── Unit-specific Excel files...
+├── 📁 processed/                        # Parquet databases
+│   ├── 🗃️ K-12-01_1y_0p1h.dedup.parquet
+│   ├── 🗃️ K-16-01_1y_0p1h.dedup.parquet
+│   ├── 🗃️ K-19-01_1y_0p1h.dedup.parquet
+│   ├── 🗃️ K-31-01_1y_0p1h.dedup.parquet
+│   ├── 🗃️ C-02001_1y_0p1h.dedup.parquet
+│   ├── 🗃️ [8 more PCMSB units...]
+│   ├── 🗃️ [2 ABFSB units...]
+│   ├── 🚀 pi.duckdb                    # 1.0 GB DuckDB database
+│   └── 📊 timeseries.parquet           # Legacy unified format
+└── 📁 units/                            # Per-unit isolated data
+    ├── K-12-01/, K-16-01/, K-19-01/, K-31-01/
+    ├── C-02001/, C-104/, C-13001/, ...
+    └── 21-K002/, 07-MT01-K001/
 ```
 
-**Total: 1.9+ GB of real industrial data across 4 major units**
+**Total: 1.9+ GB of real industrial data across 13 units**
 
 ## 🎯 Core Functionality
 
@@ -189,15 +242,39 @@ MAX_AGE_HOURS=1.0
 
 ### **Data Directory Structure**
 ```
-📁 CodeX/
+📁 Turbopredict/
 ├── 📁 data/
-│   ├── 📁 raw/          # Excel files with PI DataLink
-│   └── 📁 processed/    # Your Parquet files (auto-detected)
-├── 📁 reports/          # Generated plots and reports  
-├── 📁 pi_monitor/       # Core Python modules
-├── 🚀 turbopredict.py   # Main entry point
-└── 📋 turbopredict.bat  # Easy launcher
+│   ├── 📁 raw/              # Excel files with PI DataLink
+│   ├── 📁 processed/        # Parquet databases (1.9GB+)
+│   └── 📁 units/            # Per-unit isolated data
+├── 📁 reports/              # Generated plots and reports
+├── 📁 pi_monitor/           # Core Python modules (38 files)
+├── 📁 scripts/              # Utility scripts (100+ scripts)
+├── 📁 config/               # Configuration files and tags
+├── 📁 containers/           # Docker containerization
+├── 📁 archive/              # Archived/deprecated files (171 files)
+│   ├── tmp/, debug/, demo/  # Development artifacts
+│   ├── tests/               # Old test scripts
+│   └── utilities/           # One-off utility scripts
+├── 🚀 turbopredict.py       # Main entry point
+└── 📋 turbopredict.bat      # Easy launcher
 ```
+
+## 📁 Archive & Code Organization
+
+The repository has been reorganized for better maintainability. **171 deprecated files** have been moved to the `archive/` directory:
+
+- **12 tmp files** - Temporary diagnostic scripts
+- **10 debug files** - Development debugging tools
+- **5 demo files** - Example and demonstration scripts
+- **74 test files** - Old integration tests (should use pytest)
+- **56 utility scripts** - One-off maintenance tools (check_*, fix_*, verify_*)
+- **7 old versions** - Superseded implementations
+- **7 plotting iterations** - Evolution of plotting system
+
+See [`archive/README.md`](archive/README.md) for detailed information about archived files.
+
+**Active codebase is now ~50% cleaner and easier to navigate!**
 
 ## 🚀 Advanced Usage
 

@@ -1,0 +1,47 @@
+{
+  "agents": {
+    "timeout_predictor": {
+      "enabled": true,
+      "version": "1.0.0",
+      "config": {
+        "min_timeout": 10.0,
+        "max_timeout": 600.0,
+        "safety_margin": 1.2,
+        "dead_tag_threshold": 0.9,
+        "plant_base_timeouts": {
+          "ABF": 600.0,
+          "PCMSB": 360.0,
+          "PCFS": 60.0
+        }
+      }
+    },
+    "tag_health": {
+      "enabled": true,
+      "version": "1.0.0",
+      "config": {
+        "dead_threshold": 0.1,
+        "sick_threshold": 0.5,
+        "min_attempts": 5,
+        "consecutive_failures_dead": 20,
+        "auto_heal_enabled": true
+      }
+    },
+    "batch_optimizer": {
+      "enabled": true,
+      "version": "1.0.0",
+      "config": {
+        "min_batch": 50000,
+        "max_batch": 1000000,
+        "default_batch": 250000,
+        "memory_baseline_gb": 2.0,
+        "max_memory_factor": 4.0
+      }
+    }
+  },
+  "global_settings": {
+    "auto_save_interval": 10,
+    "log_level": "INFO",
+    "enable_performance_logging": true,
+    "model_backup_enabled": true
+  }
+}

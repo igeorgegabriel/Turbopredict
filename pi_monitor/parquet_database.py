@@ -55,8 +55,9 @@ class ParquetDatabase:
         """
         try:
             # Honor opt-out: set environment variable DISABLE_DUCKDB=1 to force Parquet-only path
+            # Default to DISABLED to use reliable dedup parquet files instead
             import os as _os
-            if _os.getenv("DISABLE_DUCKDB", "0") == "1":
+            if _os.getenv("DISABLE_DUCKDB", "1") == "1":
                 logger.info("DISABLE_DUCKDB=1 set: using Parquet-only path (DuckDB disabled)")
                 self.conn = None
                 return
@@ -90,7 +91,102 @@ class ParquetDatabase:
             self._init_duckdb()
             logger.info("DuckDB cache invalidated - connection recreated")
 
-    def _parquet_glob(self, dedup_preferred: bool = True) -> str:
+    def _is_temp_file(self, filename: str) -> bool:
+        """Check if a filename is a temporary/backup file that should be excluded.
+
+        Args:
+            filename: The filename to check
+
+        Returns:
+            True if this is a temp/backup file
+        """
+        filename_lower = filename.lower()
+        temp_patterns = [
+            '_incremental_temp',
+            '_retry_',
+            '_refreshed_',
+            '_backup',
+            '.tmp',
+            '.temp',
+            '_old',
+        ]
+        return any(pattern in filename_lower for pattern in temp_patterns)
+
+    def _is_temp_unit(self, unit_name: str) -> bool:
+        """Check if a unit name looks like it came from a temp/backup file.
+
+        Args:
+            unit_name: The unit name to check
+
+        Returns:
+            True if this unit name contains temp/backup patterns
+        """
+        if not unit_name:
+            return True
+        unit_lower = unit_name.lower()
+        temp_patterns = [
+            'backup',
+            'temp',
+            'retry',
+            'refreshed',
+            'incremental',
+            '_old',
+            '.tmp',
+        ]
+        return any(pattern in unit_lower for pattern in temp_patterns)
+
+    def _get_stable_parquet_files(self, unit: str = None, dedup_preferred: bool = True) -> List[str]:
+        """Get list of stable (non-temp) parquet file paths for querying.
+
+        This method filters out temp/backup/retry files and handles the case where
+        multiple files exist for the same unit by selecting the most appropriate one.
+
+        Args:
+            unit: Optional unit filter - if provided, only return files for this unit
+            dedup_preferred: If True, prefer .dedup.parquet files over master files
+
+        Returns:
+            List of absolute file paths to query
+        """
+        import glob as _glob
+        from pathlib import Path as _Path
+        import os as _os
+
+        # Get all parquet files
+        all_files = _glob.glob(str(self.processed_dir / "*.parquet"))
+
+        # Filter out temp files
+        stable_files = [f for f in all_files if not self._is_temp_file(_os.path.basename(f))]
+
+        # If unit specified, filter to that unit and select best file
+        if unit:
+            unit_files = []
+            for f in stable_files:
+                filename = _os.path.basename(f)
+                if filename.startswith(f"{unit}_"):
+                    unit_files.append(f)
+
+            if not unit_files:
+                return []
+
+            # Prefer dedup files over master files
+            dedup_files = [f for f in unit_files if f.endswith('.dedup.parquet')]
+            if dedup_preferred and dedup_files:
+                # Among dedup files, select the most recently modified
+                unit_files_with_mtime = [(f, _os.path.getmtime(f)) for f in dedup_files]
+            else:
+                # Select from all stable files for this unit
+                unit_files_with_mtime = [(f, _os.path.getmtime(f)) for f in unit_files]
+
+            # Return only the most recent file for this unit to avoid duplicates
+            if unit_files_with_mtime:
+                latest_file = max(unit_files_with_mtime, key=lambda x: x[1])[0]
+                return [latest_file]
+            return []
+
+        return stable_files
+
+    def _parquet_glob(self, dedup_preferred: bool = True, exclude_temp: bool = True) -> str:
         """Return glob pattern for Parquet reads.
 
         Historically we preferred reading only ``*dedup.parquet`` files for
@@ -105,8 +201,23 @@ class ParquetDatabase:
         so both master and dedup files are visible to DuckDB. The
         ``WHERE unit = ?`` filter in queries ensures we only scan the relevant
         unit, and ``MAX(time)`` remains correct even if both files are present.
+
+        NOTE: This method is deprecated in favor of _get_stable_parquet_files()
+        which properly handles temp file exclusion and duplicate file selection.
+
+        Args:
+            dedup_preferred: If True, only read *dedup.parquet files
+            exclude_temp: If True, exclude temp/backup/retry files (default: True)
         """
-        return str(self.processed_dir / ("*dedup.parquet" if dedup_preferred else "*.parquet"))
+        if dedup_preferred:
+            return str(self.processed_dir / "*dedup.parquet")
+        else:
+            # Return pattern that excludes temp files by default
+            if exclude_temp:
+                # Return a list pattern that we'll need to handle specially
+                return str(self.processed_dir / "*.parquet")
+            else:
+                return str(self.processed_dir / "*.parquet")
     
     def get_available_parquet_files(self) -> List[Dict[str, Any]]:
         """Get list of available Parquet files with metadata"""
@@ -263,6 +374,9 @@ class ParquetDatabase:
                     units.add("07-MT001/K001")
                 if "xt07002" in name or "xt-07002" in name or "xt_07002" in name:
                     units.add("XT-07002")
+                # New ABF equipment mapping by file token
+                if "21k002" in name or "21-k002" in name or "21_k002" in name:
+                    units.add("21-K002")
 
                 # Try to infer other units from first non-comment tag line
                 try:
@@ -276,7 +390,12 @@ class ParquetDatabase:
                         import re
                         m = re.search(r"\b([A-Z]{1,4}-\d{2,5}(?:-\d{2})?)\b", first_line)
                         if m:
-                            units.add(m.group(1))
+                            token = m.group(1).upper()
+                            # Whitelist only real unit prefixes; avoid interpreting
+                            # instrument tag names (e.g., SI-21001, TI-*, PI-*) as units.
+                            prefix = token.split('-')[0]
+                            if prefix in {"K", "C", "XT"}:
+                                units.add(token)
                 except Exception:
                     pass
         except Exception:
@@ -285,21 +404,35 @@ class ParquetDatabase:
     
     def get_unit_data(self, unit: str, start_time: datetime = None, end_time: datetime = None) -> pd.DataFrame:
         """Get data for a specific unit.
-        
+
         Args:
             unit: Unit identifier (e.g., 'K-31-01')
             start_time: Optional start time filter
             end_time: Optional end time filter
-            
+
         Returns:
             DataFrame with unit data
         """
-        # Fast path: DuckDB over Parquet
+        # Fast path: DuckDB over Parquet - use stable file selection to avoid duplicates
         if self.conn is not None:
             try:
+                # Get the stable file(s) for this unit (excludes temp files, handles duplicates)
+                stable_files = self._get_stable_parquet_files(unit=unit, dedup_preferred=True)
+
+                if not stable_files:
+                    logger.warning(f"No stable parquet files found for unit {unit}")
+                    return pd.DataFrame()
+
+                # Build file list for DuckDB query
+                if len(stable_files) == 1:
+                    file_pattern = f"'{stable_files[0]}'"
+                else:
+                    file_list = ", ".join(f"'{f}'" for f in stable_files)
+                    file_pattern = f"[{file_list}]"
+
                 q = (
                     "SELECT CAST(time AS TIMESTAMP) AS time, value, plant, unit, tag "
-                    f"FROM read_parquet('{self._parquet_glob(True)}') WHERE unit = ?"
+                    f"FROM read_parquet({file_pattern}) WHERE unit = ?"
                 )
                 params = [unit]
                 if start_time is not None:
@@ -310,7 +443,7 @@ class ParquetDatabase:
                     params.append(end_time)
                 q += " ORDER BY time"
                 df = self.conn.execute(q, params).fetchdf()
-                logger.info(f"Loaded {len(df)} records for unit {unit} via DuckDB")
+                logger.info(f"Loaded {len(df)} records for unit {unit} via DuckDB (from {len(stable_files)} file(s))")
                 return df
             except Exception as e:
                 logger.warning(f"DuckDB read failed for {unit}: {e}; falling back to pandas")
@@ -370,8 +503,23 @@ class ParquetDatabase:
         updated_files = _prefer_span(updated_files)
 
         target_file = None
-        if updated_files:
-            # Use newest updated file (highest priority - historical + fresh data combined)
+        # Heuristic: when caller requests a long lookback window (e.g., 90 days
+        # for plotting), prefer long-span master files over small "updated"
+        # slices that may only contain a few recent days.
+        long_lookback = False
+        try:
+            if start_time is not None:
+                long_lookback = (datetime.now() - start_time) > timedelta(days=30)
+        except Exception:
+            long_lookback = False
+
+        if long_lookback and dedup_files:
+            # Prefer dedup which typically spans months/years
+            target_file = dedup_files[0]
+        elif long_lookback and regular_files:
+            target_file = regular_files[0]
+        elif updated_files:
+            # Use newest updated file (usually recent slice)
             target_file = updated_files[0]
         elif dedup_files:
             # Prefer dedup files (cleaned, reliable data)
@@ -441,6 +589,162 @@ class ParquetDatabase:
             return df['time'].max()
 
         return None
+
+    def get_unit_tag_data(
+        self,
+        unit: str,
+        tag: str,
+        start_time: datetime | None = None,
+        end_time: datetime | None = None,
+    ) -> pd.DataFrame:
+        """Return rows for a specific unit+tag within an optional time window.
+
+        This method avoids loading entire year-long Parquet files into memory.
+        It prefers DuckDB for predicate pushdown; when DuckDB is disabled or
+        unavailable, it falls back to a pyarrow.dataset scanner with filters,
+        and finally to a streaming row-group reader as a last resort.
+        """
+        # Fast path via DuckDB (handles predicate pushdown efficiently)
+        if self.conn is not None:
+            try:
+                # Use stable file selection to avoid temp files and duplicates
+                stable_files = self._get_stable_parquet_files(unit=unit, dedup_preferred=True)
+
+                if not stable_files:
+                    return pd.DataFrame()
+
+                # Build file pattern for DuckDB
+                if len(stable_files) == 1:
+                    file_pattern = f"'{stable_files[0]}'"
+                else:
+                    file_list = ", ".join(f"'{f}'" for f in stable_files)
+                    file_pattern = f"[{file_list}]"
+
+                q = (
+                    "SELECT CAST(time AS TIMESTAMP) AS time, value, plant, unit, tag "
+                    f"FROM read_parquet({file_pattern}) "
+                    "WHERE unit = ? AND tag = ?"
+                )
+                params: list[object] = [unit, tag]
+                if start_time is not None:
+                    q += " AND time >= ?"
+                    params.append(start_time)
+                if end_time is not None:
+                    q += " AND time <= ?"
+                    params.append(end_time)
+                q += " ORDER BY time"
+                df = self.conn.execute(q, params).fetchdf()
+                logger.info(
+                    f"Loaded {len(df)} records for {unit}/{tag} via DuckDB (from {len(stable_files)} file(s))"
+                )
+                return df
+            except Exception as e:
+                logger.warning(
+                    f"DuckDB read failed for {unit}/{tag}: {e}; falling back to Arrow"
+                )
+
+        # Fallback: pyarrow.dataset with filter pushdown over top-level *.parquet
+        try:
+            import pyarrow.dataset as ds
+            import pyarrow as pa  # noqa: F401 (ensures pyarrow present)
+
+            files = list(self.processed_dir.glob("*.parquet"))
+            if not files:
+                return pd.DataFrame()
+
+            dataset = ds.dataset([str(p) for p in files], format="parquet")
+            schema_names = set(dataset.schema.names)
+            # Require fields to exist; inconsistent legacy files (e.g. refreshed slices)
+            # may miss 'tag' and/or 'unit'. In that case, skip to streaming fallback.
+            if not {"unit", "tag", "time"}.issubset(schema_names):
+                raise RuntimeError("dataset missing required fields for filter pushdown")
+
+            filt = (ds.field("unit") == unit) & (ds.field("tag") == tag)
+            if start_time is not None:
+                filt = filt & (ds.field("time") >= start_time)
+            if end_time is not None:
+                filt = filt & (ds.field("time") <= end_time)
+
+            cols = [c for c in ["time", "value", "unit", "tag"] if c in schema_names]
+            table = dataset.to_table(filter=filt, columns=cols)
+            df = table.to_pandas()
+            if "time" in df.columns:
+                df["time"] = pd.to_datetime(df["time"], errors="coerce")
+                df = df.dropna(subset=["time"]).sort_values("time")
+            logger.info(
+                f"Loaded {len(df)} records for {unit}/{tag} via pyarrow.dataset"
+            )
+            return df
+        except Exception as e:
+            logger.warning(
+                f"pyarrow.dataset read failed for {unit}/{tag}: {e}; falling back to streaming"
+            )
+
+        # Last-resort fallback: stream row groups to keep memory bounded
+        try:
+            import pyarrow.parquet as pq
+            import pyarrow as pa
+
+            # Prefer reading only files that likely contain this unit
+            unit_patterns = [
+                f"*{unit}*.parquet",
+                f"*{unit.replace('/', '-')}*.parquet",
+                f"*{unit.replace('/', '_')}*.parquet",
+                f"*{unit.replace('-', '_')}*.parquet",
+            ]
+            candidate_files: list[Path] = []
+            for pat in unit_patterns:
+                candidate_files.extend(list(self.processed_dir.glob(pat)))
+            # If nothing matched, fall back to dedup/*.parquet
+            if not candidate_files:
+                candidate_files = list(self.processed_dir.glob("*dedup.parquet")) or list(
+                    self.processed_dir.glob("*.parquet")
+                )
+            if not candidate_files:
+                return pd.DataFrame()
+
+            batches: list[pd.DataFrame] = []
+            for path in candidate_files:
+                try:
+                    pf = pq.ParquetFile(str(path))
+                except Exception:
+                    continue
+                # Only columns we need
+                wanted_cols = [
+                    c for c in ["time", "value", "plant", "unit", "tag"]
+                    if c in pf.schema.names
+                ]
+                for rb in pf.iter_batches(columns=wanted_cols):
+                    tbl = pa.Table.from_batches([rb])
+                    df_part = tbl.to_pandas()
+                    # Apply filters in pandas; batches keep memory bounded
+                    try:
+                        if "unit" in df_part.columns:
+                            df_part = df_part[df_part["unit"] == unit]
+                        if "tag" in df_part.columns:
+                            df_part = df_part[df_part["tag"] == tag]
+                        if start_time is not None and "time" in df_part.columns:
+                            df_part = df_part[pd.to_datetime(df_part["time"]) >= start_time]
+                        if end_time is not None and "time" in df_part.columns:
+                            df_part = df_part[pd.to_datetime(df_part["time"]) <= end_time]
+                        if not df_part.empty:
+                            batches.append(df_part)
+                    except Exception:
+                        # Skip malformed batch but continue streaming others
+                        pass
+            if not batches:
+                return pd.DataFrame()
+            out = pd.concat(batches, ignore_index=True)
+            if "time" in out.columns:
+                out["time"] = pd.to_datetime(out["time"], errors="coerce")
+                out = out.dropna(subset=["time"]).sort_values("time")
+            logger.info(
+                f"Loaded {len(out)} records for {unit}/{tag} via streaming fallback"
+            )
+            return out
+        except Exception as e:
+            logger.error(f"Failed to stream Parquet for {unit}/{tag}: {e}")
+            return pd.DataFrame()
 
     def check_tag_freshness(self, unit: str, max_age_hours: float = 1.0) -> tuple[bool, int, int]:
         """Check if at least 50% of tags have fresh data (< max_age_hours old).
@@ -549,77 +853,36 @@ class ParquetDatabase:
                 import os as _os_path
                 from datetime import datetime as _datetime
 
-                parquet_pattern = str(self.processed_dir / "*.parquet")
-                all_files = _glob.glob(parquet_pattern)
+                # Use the new stable file selection method to avoid temp files and duplicates
+                stable_files = self._get_stable_parquet_files(unit=unit, dedup_preferred=True)
 
-                # Find files matching this unit (by filename convention: {unit}_*)
-                # Match patterns: C-02001_*, \\C-02001_*, /C-02001_*
-                unit_files = []
-                for f in all_files:
-                    filename = _os_path.basename(f)
-                    # Check if filename starts with unit prefix
-                    if filename.startswith(f"{unit}_"):
-                        unit_files.append(f)
+                if not stable_files:
+                    # No stable files found for this unit
+                    logger.debug(f"No stable files found for {unit}")
+                    info = {
+                        'unit': unit,
+                        'tag': tag,
+                        'total_records': 0,
+                        'latest_timestamp': None,
+                        'earliest_timestamp': None,
+                        'data_age_hours': None,
+                        'is_stale': True,
+                        'unique_tags': [],
+                        'date_range_days': None,
+                    }
+                    return info
 
-                # DEBUG: Print file selection for problematic units
-                if unit == 'C-02001':
-                    print(f"\n[DEBUG] C-02001 file search:")
-                    print(f"  Pattern: {parquet_pattern}")
-                    print(f"  Total files found: {len(all_files)}")
-                    print(f"  Unit-specific files found: {len(unit_files)}")
-                    if unit_files:
-                        for f in unit_files[:5]:  # Show first 5
-                            mtime = _datetime.fromtimestamp(_os_path.getmtime(f))
-                            print(f"    - {_os_path.basename(f)}")
-                            print(f"      mtime: {mtime.strftime('%Y-%m-%d %H:%M:%S')}")
+                # Use the selected stable file for querying
+                latest_file = stable_files[0]  # _get_stable_parquet_files returns only one file per unit
 
-                if not unit_files:
-                    # Fallback: use broad glob
-                    logger.debug(f"No specific files found for {unit}, using broad glob")
-                    q = (
-                        f"WITH src AS (SELECT time, tag FROM read_parquet('{self._parquet_glob(False)}') WHERE unit = ?) "
-                        "SELECT (SELECT COUNT(*) FROM (SELECT DISTINCT time, tag FROM src) t) AS total, "
-                        "       MIN(time) AS earliest, MAX(time) AS latest, "
-                        "       COUNT(DISTINCT tag) AS uniq "
-                        "FROM src"
-                    )
-                    total, earliest, latest, uniq = self.conn.execute(q, [unit]).fetchone()
-                else:
-                    # Read only from the most recently modified file for this unit
-                    # Prefer .dedup.parquet over master .parquet
-                    dedup_files = [f for f in unit_files if f.endswith('.dedup.parquet')]
-                    if dedup_files:
-                        unit_files_with_mtime = [(f, _os_path.getmtime(f)) for f in dedup_files]
-                    else:
-                        unit_files_with_mtime = [(f, _os_path.getmtime(f)) for f in unit_files]
-
-                    latest_file = max(unit_files_with_mtime, key=lambda x: x[1])[0]
-
-                    # DEBUG: Show selected file for C-02001
-                    if unit == 'C-02001':
-                        selected_mtime = _datetime.fromtimestamp(_os_path.getmtime(latest_file))
-                        print(f"  SELECTED FILE: {_os_path.basename(latest_file)}")
-                        print(f"    mtime: {selected_mtime.strftime('%Y-%m-%d %H:%M:%S')}")
-                        print(f"    Reading data...")
-
-                    q = (
-                        f"WITH src AS (SELECT time, tag FROM read_parquet('{latest_file}') WHERE unit = ?) "
-                        "SELECT (SELECT COUNT(*) FROM (SELECT DISTINCT time, tag FROM src) t) AS total, "
-                        "       MIN(time) AS earliest, MAX(time) AS latest, "
-                        "       COUNT(DISTINCT tag) AS uniq "
-                        "FROM src"
-                    )
-                    total, earliest, latest, uniq = self.conn.execute(q, [unit]).fetchone()
-
-                    # DEBUG: Show query result for C-02001
-                    if unit == 'C-02001' and latest:
-                        import pandas as _pd
-                        latest_dt = _pd.to_datetime(latest)
-                        age_hours = (_datetime.now() - latest_dt).total_seconds() / 3600
-                        print(f"  QUERY RESULT:")
-                        print(f"    Latest timestamp: {latest_dt}")
-                        print(f"    Age: {age_hours:.1f}h")
-                        print(f"    Records: {total:,}\n")
+                q = (
+                    f"WITH src AS (SELECT time, tag FROM read_parquet('{latest_file}') WHERE unit = ?) "
+                    "SELECT (SELECT COUNT(*) FROM (SELECT DISTINCT time, tag FROM src) t) AS total, "
+                    "       MIN(time) AS earliest, MAX(time) AS latest, "
+                    "       COUNT(DISTINCT tag) AS uniq "
+                    "FROM src"
+                )
+                total, earliest, latest, uniq = self.conn.execute(q, [unit]).fetchone()
                 # Prepare base structure
                 info = {
                     'unit': unit,
@@ -769,24 +1032,57 @@ class ParquetDatabase:
         Combines units discovered from existing Parquet files with units
         declared via config tag files so new units (e.g., C-02001) show up
         in scans even before the first fetch.
+
+        This method now checks both:
+        - Top-level parquet files (data/processed/*.parquet)
+        - Partitioned dataset directory (data/processed/dataset/plant=*/unit=*/...)
         """
         units = set()
-        # Prefer DuckDB distinct units from Parquet contents
+
+        # Check partitioned dataset directory if it exists
+        dataset_dir = self.processed_dir / "dataset"
+        if dataset_dir.exists():
+            try:
+                # Scan for unit directories in partitioned structure
+                for plant_dir in dataset_dir.glob("plant=*"):
+                    for unit_dir in plant_dir.glob("unit=*"):
+                        unit_name = unit_dir.name.replace("unit=", "")
+                        # Filter out backup/temp unit names and plant-level names
+                        if unit_name and unit_name.lower() not in ('pcfs', 'pcmsb', 'abf') and not self._is_temp_unit(unit_name):
+                            units.add(unit_name)
+            except Exception as e:
+                logger.warning(f"Failed to scan partitioned dataset: {e}")
+
+        # Get units from stable top-level parquet files (excludes temp files)
         if self.conn is not None:
             try:
-                q = f"SELECT DISTINCT unit FROM read_parquet('{self._parquet_glob(True)}') WHERE unit IS NOT NULL"
-                for (u,) in self.conn.execute(q).fetchall():
-                    units.add(str(u))
-            except Exception:
-                pass
-        # Units from file names as backup
+                # Get stable files only
+                stable_files = self._get_stable_parquet_files(unit=None, dedup_preferred=False)
+                if stable_files:
+                    # Build file list for DuckDB
+                    file_list = ", ".join(f"'{f}'" for f in stable_files)
+                    q = f"SELECT DISTINCT unit FROM read_parquet([{file_list}]) WHERE unit IS NOT NULL"
+                    for (u,) in self.conn.execute(q).fetchall():
+                        unit_str = str(u)
+                        # Filter out unit names that look like temp/backup artifacts
+                        if not self._is_temp_unit(unit_str):
+                            units.add(unit_str)
+            except Exception as e:
+                logger.warning(f"Failed to get units from DuckDB: {e}")
+
+        # Units from file names as backup (exclude temp files and temp unit names)
         for file_info in self.get_available_parquet_files():
-            unit_name = file_info.get('unit')
-            if unit_name and unit_name.lower() not in ('pcfs', 'pcmsb', 'abf'):
-                units.add(unit_name)
+            filename = file_info.get('filename', '')
+            if not self._is_temp_file(filename):
+                unit_name = file_info.get('unit')
+                # Also check if the unit name itself looks like a temp/backup artifact
+                if unit_name and unit_name.lower() not in ('pcfs', 'pcmsb', 'abf') and not self._is_temp_unit(unit_name):
+                    units.add(unit_name)
+
         # Units from config
         for u in self._discover_config_units():
             units.add(u)
+
         # Normalize legacy aliases (e.g., ABF unit name)
         alias_map = {
             '07-MT01/K001': '07-MT01-K001',

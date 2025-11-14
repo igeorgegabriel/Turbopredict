@@ -290,6 +290,128 @@ def create_smart_detector() -> SmartAnomalyDetector:
     return SmartAnomalyDetector()
 
 
+def _sigma_only_detection(df: pd.DataFrame, unit: str, *, z_thresh: float = 2.5, min_consecutive: int = 6) -> Dict[str, Any]:
+    """Sigma-only anomaly detection with consecutive-run gate (no MTD/IF).
+
+    A tag is abnormal if there exists a run of >= `min_consecutive` consecutive
+    points with |z| >= `z_thresh` within the last 24 hours.
+    """
+    results: Dict[str, Any] = {
+        'unit': unit,
+        'method': 'sigma_only',
+        'total_anomalies': 0,
+        'by_tag': {},
+        'total_records': int(len(df) if df is not None else 0),
+    }
+    if df is None or len(df) == 0:
+        return results
+
+    cols = [c for c in ['time', 'value', 'tag'] if c in df.columns]
+    d = df[cols].copy()
+    d['time'] = pd.to_datetime(d['time'], errors='coerce')
+    d = d.dropna(subset=['time', 'value'])
+    if 'tag' not in d.columns:
+        d['tag'] = 'series'
+
+    # Sigma baseline and recency gate: use 90 days for baseline, last 24h for actionability
+    cutoff = datetime.now() - timedelta(hours=24)
+    by_tag: Dict[str, Any] = {}
+    for tag, g in d.groupby('tag'):
+        gg = g.sort_values('time')
+        try:
+            ts = gg.set_index('time')['value']
+            # 90-day rolling baseline for mean/std
+            roll_mean = ts.rolling('90D', min_periods=20).mean()
+            roll_std = ts.rolling('90D', min_periods=20).std()
+            z = (ts - roll_mean) / roll_std
+            sigma_flag = (z.abs() >= z_thresh) & roll_std.notna()
+        except Exception:
+            continue
+
+        last_24 = sigma_flag[sigma_flag.index >= cutoff]
+        last_24_count = int(last_24.sum())
+
+        run = 0
+        max_run = 0
+        for v in last_24.astype(int).values.tolist():
+            if v == 1:
+                run += 1
+                if run > max_run:
+                    max_run = run
+            else:
+                run = 0
+
+        if max_run >= min_consecutive and last_24_count > 0:
+            # Get current (most recent) value and its baseline mean
+            current_value = float(ts.iloc[-1]) if len(ts) > 0 else 0.0
+            baseline_mean = float(roll_mean.iloc[-1]) if len(roll_mean) > 0 and pd.notna(roll_mean.iloc[-1]) else current_value
+
+            # Calculate percentage deviation from baseline mean
+            # This is the key metric for severity and bubble sizing
+            if baseline_mean != 0:
+                deviation_pct = abs((current_value - baseline_mean) / baseline_mean) * 100
+            else:
+                deviation_pct = 0.0
+
+            # Clamp deviation percentage to reasonable range (0-300%)
+            # Removed 100% cap - tags can have >100% deviation (e.g., value doubles = 100% deviation)
+            # Cap at 300% to prevent extreme outliers from skewing visualization
+            deviation_pct = min(300.0, max(0.0, deviation_pct))
+
+            # Dynamic confidence score calculation (20-100 scale)
+            # Base: 20 points for any detected anomaly
+            base_score = 20
+            # Recent anomalies (0-35 points): more recent activity = higher severity
+            recent_score = min(35, last_24_count * 2.5)
+            # Consecutive run (0-30 points): longer runs = more persistent issue
+            consecutive_score = min(30, max_run * 3)
+            # Overall anomaly rate (0-15 points): higher rate = more problematic
+            rate_score = min(15, sigma_flag.mean() * 100)
+
+            # Calculate final score and clamp to 20-100 range
+            dynamic_confidence = int(base_score + recent_score + consecutive_score + rate_score)
+            dynamic_confidence = min(100, max(20, dynamic_confidence))
+
+            # Assign confidence level based on score
+            if dynamic_confidence >= 80:
+                confidence_level = 'HIGH'
+                priority_level = 'HIGH'
+            elif dynamic_confidence >= 50:
+                confidence_level = 'MEDIUM'
+                priority_level = 'MEDIUM'
+            else:
+                confidence_level = 'LOW'
+                priority_level = 'LOW'
+
+            tag_info = {
+                'count': int(sigma_flag.sum()),
+                'rate': float(sigma_flag.mean()),
+                'method': 'sigma_only',
+                'sigma_2_5_count': int(sigma_flag.sum()),
+                'sigma_consecutive_ge_n': int(max_run),
+                'recency_breakdown': {'last_24h': last_24_count},
+                # New classification signals: 24h exceedances threshold
+                'recent_exceedances_24h': int(last_24_count),
+                'is_anomalous_24h_min5': bool(last_24_count >= 5),
+                'mtd_count': 0,
+                'isolation_forest_count': 0,
+                'confidence': confidence_level,
+                'confidence_score': dynamic_confidence,
+                'priority': priority_level,
+                # Add current value, baseline mean, and deviation percentage
+                'current_value': round(current_value, 2),
+                'baseline_mean': round(baseline_mean, 2),
+                'deviation_percentage': round(deviation_pct, 1),
+            }
+            by_tag[str(tag)] = tag_info
+
+    results['by_tag'] = by_tag
+    results['total_anomalies'] = sum(v.get('count', 0) for v in by_tag.values())
+    # Ensure consistent contract with callers: always provide anomaly_rate
+    total_records = max(1, int(results.get('total_records', 0) or 0))
+    results['anomaly_rate'] = results['total_anomalies'] / total_records
+    return results
+
 def smart_anomaly_detection(df: pd.DataFrame, unit: str, auto_plot_anomalies: bool = True) -> Dict[str, Any]:
     """
     Main entry point for smart anomaly detection with automatic anomaly plotting
@@ -302,38 +424,108 @@ def smart_anomaly_detection(df: pd.DataFrame, unit: str, auto_plot_anomalies: bo
     Returns:
         Smart anomaly detection results with unit status awareness
     """
-    # PERFORMANCE FIX: Use direct hybrid detection (2.5σ + MTD + IF) without speed compensation
-    # Speed-aware path is disabled due to performance issues with large datasets (>1M records)
-    logger.info(f"Using hybrid anomaly detection (2.5σ + MTD + IF) for unit {unit}")
+    # Default: sigma-only detection with 90d baseline and >=6 consecutive 2.5σ in last 24h.
+    # To revert to the original hybrid pipeline (2.5σ + MTD + IF), set HYBRID_DETECTION=1.
+    _hybrid_env = os.getenv('HYBRID_DETECTION', '').strip().lower()
+    if _hybrid_env not in ('1','true','yes','y'):
+        logger.info(f"Using sigma-only detection for unit {unit} (2.5σ, min 6 consecutive in last 24h)")
+        results = _sigma_only_detection(df, unit, z_thresh=2.5, min_consecutive=6)
 
-    # Use original smart detection (which calls hybrid internally)
-    detector = create_smart_detector()
-    results = detector.analyze_with_status_check(df, unit)
+        # Auto-plot using sigma-only gate
+        if auto_plot_anomalies and results.get('by_tag'):
+            try:
+                from .anomaly_triggered_plots import generate_anomaly_plots
+                by_tag = results.get('by_tag', {})
+                verified_count = 0
+                for _tag, tag_info in by_tag.items():
+                    recent = tag_info.get('recency_breakdown', {}).get('last_24h', 0)
+                    max_run = tag_info.get('sigma_consecutive_ge_n', 0)
+                    if recent and max_run and int(max_run) >= 6:
+                        verified_count += 1
+                if verified_count > 0:
+                    detection_results = {unit: results}
+                    plot_session_dir = generate_anomaly_plots(detection_results)
+                    results['anomaly_plots_generated'] = True
+                    results['plot_session_dir'] = str(plot_session_dir)
+                    results['verified_anomalies_count'] = verified_count
+                else:
+                    results['anomaly_plots_generated'] = False
+                    results['verified_anomalies_count'] = 0
+            except Exception as e:
+                logger.error(f"Error in automatic anomaly plotting (sigma-only): {e}")
+                results['anomaly_plots_generated'] = False
+                results['plot_error'] = str(e)
+        return results
+    # Sigma-only early-exit (env SIGMA_ONLY=1): 2.5σ with ≥6 consecutive
+    # points in the last 24h triggers plotting of 90-day context.
+    _sigma_only_env = os.getenv('SIGMA_ONLY', '').strip().lower()
+    if _sigma_only_env in ('1','true','yes','y'):
+        logger.info(f"Using sigma-only detection for unit {unit} (2.5σ, min 6 consecutive in last 24h)")
+        results = _sigma_only_detection(df, unit, z_thresh=2.5, min_consecutive=6)
+
+        # Auto-plot using sigma-only gate
+        if auto_plot_anomalies and results.get('by_tag'):
+            try:
+                from .anomaly_triggered_plots import generate_anomaly_plots
+                by_tag = results.get('by_tag', {})
+                verified_count = 0
+                for _tag, tag_info in by_tag.items():
+                    recent = tag_info.get('recency_breakdown', {}).get('last_24h', 0)
+                    max_run = tag_info.get('sigma_consecutive_ge_n', 0)
+                    if recent and max_run and int(max_run) >= 6:
+                        verified_count += 1
+                if verified_count > 0:
+                    detection_results = {unit: results}
+                    plot_session_dir = generate_anomaly_plots(detection_results)
+                    results['anomaly_plots_generated'] = True
+                    results['plot_session_dir'] = str(plot_session_dir)
+                    results['verified_anomalies_count'] = verified_count
+                else:
+                    results['anomaly_plots_generated'] = False
+                    results['verified_anomalies_count'] = 0
+            except Exception as e:
+                logger.error(f"Error in automatic anomaly plotting (sigma-only): {e}")
+                results['anomaly_plots_generated'] = False
+                results['plot_error'] = str(e)
+        return results
+    # SIGMA-ONLY MODE: Use pure 2.5-sigma detection without MTD/IF verification
+    # Disabled hybrid detection (MTD + IF) for reliability and simplicity
+    # Pure sigma with 90-day rolling baseline + 6-consecutive-point gate
+    logger.info(f"Using sigma-only anomaly detection (2.5σ, pure) for unit {unit}")
+
+    # Force sigma-only: pure 2.5-sigma with 90-day rolling baseline
+    results = _sigma_only_detection(df, unit, z_thresh=2.5, min_consecutive=6)
 
     # Auto-trigger plotting for verified anomalies
     if auto_plot_anomalies and results.get('by_tag'):
         try:
             from .anomaly_triggered_plots import generate_anomaly_plots
 
-            # Check if any anomalies are verified (meet the detection pipeline criteria)
+            # Check if any anomalies are verified (hybrid) or meet sigma-only rule
             verified_count = 0
             by_tag = results.get('by_tag', {})
 
-            for tag, tag_info in by_tag.items():
-                # Check verification criteria (same as in anomaly_triggered_plots.py)
-                sigma_count = tag_info.get('sigma_2_5_count', 0)
-                ae_count = tag_info.get('autoencoder_count', 0)
-                mtd_count = tag_info.get('mtd_count', 0)
-                iso_count = tag_info.get('isolation_forest_count', 0)
-                confidence = tag_info.get('confidence', 'LOW')
+            _sigma_only_env = os.getenv('SIGMA_ONLY', '').strip().lower()
+            if _sigma_only_env in ('1','true','yes','y'):
+                for _tag, tag_info in by_tag.items():
+                    recent = tag_info.get('recency_breakdown', {}).get('last_24h', 0)
+                    max_run = tag_info.get('sigma_consecutive_ge_n', 0)
+                    if recent and max_run and int(max_run) >= 6:
+                        verified_count += 1
+            else:
+                for _tag, tag_info in by_tag.items():
+                    sigma_count = tag_info.get('sigma_2_5_count', 0)
+                    ae_count = tag_info.get('autoencoder_count', 0)
+                    mtd_count = tag_info.get('mtd_count', 0)
+                    iso_count = tag_info.get('isolation_forest_count', 0)
+                    confidence = tag_info.get('confidence', 'LOW')
 
-                # Primary detection + verification + confidence
-                primary_detected = sigma_count > 0 or ae_count > 0
-                verification_detected = mtd_count > 0 or iso_count > 0
-                high_confidence = confidence in ['HIGH', 'MEDIUM']
+                    primary_detected = sigma_count > 0 or ae_count > 0
+                    verification_detected = mtd_count > 0 or iso_count > 0
+                    high_confidence = confidence in ['HIGH', 'MEDIUM']
 
-                if primary_detected and verification_detected and high_confidence:
-                    verified_count += 1
+                    if primary_detected and verification_detected and high_confidence:
+                        verified_count += 1
 
             # Trigger plotting if verified anomalies found
             if verified_count > 0:
